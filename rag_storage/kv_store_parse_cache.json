@@ -1,0 +1,928 @@
+{
+  "c24838f0bbbafb46ace775d13be0ca14": {
+    "content_list": [
+      {
+        "type": "text",
+        "text": "R2CVN TRADESECRET",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "ENGINEERING REPORT",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "IJPE-0008",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "Attachment 01/Rev04",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "ISSUE NO.:",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "ER-26-0157-01",
+        "page_idx": 0
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_0.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "APPROVED BY:",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "MURAKAMI ATSUSHI",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "APPROVED",
+        "page_idx": 1
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_1.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "NG",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "MODEL:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "TITLE:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "APPROVED BY:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "PART NO.:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "PURPOSE:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "CHECKED BY:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "PART NAME:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "ISSUED BY:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "DATE:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "EXT:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "DETAILS:  (              Trouble:1. Problem, 2.Cause, 3.Temporary solution, 4.Permanent solution",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "Record and sharing",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "Gap abnormal between Top_Cover and Right_Cover",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "L1268",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "RC7-0183-000",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "Right_Cover",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "MURAKAMI ATSUSHI",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "Le Thi Dung",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "8453",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "2026-05-28",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "Ha Hoc Tu",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "APPROVED",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "Technical report: 1.Background, 2.Conclusion, 3.Result)",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "1. PROBLEM:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "▪ What (NG phenomenon): Gap abnormal between Top_Cover and Right_Cover",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "▪ Model/Cell/Station): L1268",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "▪ When ( Happened date/Quarter/time): 12-Dec2025",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "▪ Who ( detect by): ASSY",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "▪ Quantity: 2 machines",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "▪ Maker: Rishi",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "▪ Body: Other",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "2. CAUSE:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "Cause: Interfere with Left cover and Cover_Gear because Part RC7-0183 have shape not good.",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "3. TEMPORARY SOLUTION:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "Check 3D VPS newest",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "PE1 rework part 87/87 (finished)",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "4. PERMANENT SOLUTION:",
+        "page_idx": 1
+      },
+      {
+        "type": "text",
+        "text": "Feedback to JP change DWG ( 12-Dec-25) JP issue ECN JJR27526",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "Check appearance verify by sheet paper & record measurement data actual",
+        "page_idx": 2
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_2.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 2
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_3.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "Feedback JP",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "15-Dec-2025",
+        "page_idx": 2
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_4.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "JP issue ECN JJR27526",
+        "page_idx": 2
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_5.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 2
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_6.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "PE1 finished FA: RS",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "24-Mar-2026",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "Problem happen",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "Feedback JP",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "JP issue ECN JJR27526",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "FA for ECN",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "PE1 finished FA: RS",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "15-Dec-2025",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "12-Dec-2025",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "2-Feb-2026",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "12-Mar-2026",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "24-Mar-2026",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "Plan:",
+        "page_idx": 3
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_7.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 2
+      },
+      {
+        "type": "text",
+        "text": "OK",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "Gap spec: 0~2mm",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "Actual 2.4 mm R2 CONFIDENTIAL",
+        "page_idx": 3
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_8.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 3
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_9.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "Page   1 /2",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "IJPE-0008",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "Attachment 01/Rev04",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "ATTACHED SHEET",
+        "page_idx": 3
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_10.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "Attached sheet for:",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "ER-26-0157-01",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Phenomenon:",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Assembly Cover",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Station 8",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Check Falcon",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Station 9",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Packing",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Station 10",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Check Hioki",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Station 7",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "After assembly, OP detect gap",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "abnormal on machine",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "Check Assembly ( Working position)",
+        "page_idx": 3
+      },
+      {
+        "type": "text",
+        "text": "Right side machine : OK - Assembly unit",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "complete",
+        "page_idx": 4
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_11.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Check assembly situation: NG - Part have interfere",
+        "page_idx": 4
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_12.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": ">",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Assembly again replace by FA part : Still NG",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Check VPS 3D:",
+        "page_idx": 4
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_13.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 4
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_14.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Interfere position",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "一",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Realize interfere between Right_Cover and Gear_Cover ➔ Conclusion Part shape not good.",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Right Plate: OK - Child parrt no have abnormal about shape",
+        "page_idx": 4
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_15.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 4
+      },
+      {
+        "type": "text",
+        "text": "Page:   2/2",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "IJPE-0008 Attachment 01/Rev04",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "R2 CONFIDENTIAL",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "Countermeasure:",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "- Feedback to JP",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "Plan:",
+        "page_idx": 5
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_16.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "Problem happen",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "Feedback JP",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "JP issue ECN",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "JJR27526",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "FA for ECN",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "PE1 finished FA:",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "RS",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "15-Dec-2025",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "12-Dec-2025",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "2-Feb-2026",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "24-Mar-2026",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "Prevent solution:",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "Verify by document inspection & record measurement result when check assembly FA",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "ATTACHED SHEET",
+        "page_idx": 5
+      },
+      {
+        "type": "text",
+        "text": "12-Mar-2026",
+        "page_idx": 6
+      },
+      {
+        "type": "image",
+        "img_path": "C:\\Users\\xuant\\OneDrive\\Máy tính\\AIChatbot\\output\\ER-26-0157-01_38c6e2d8\\ER-26-0157-01\\docling\\images\\image_17.png",
+        "image_caption": "",
+        "image_footnote": "",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "2-1.晾期·段差·平行性测定留所·MEASUREMENTPOINTSOFSPACE&STEP&Paralelm",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "TITTESPACE&STEP&Parallelism",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "《上面》",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "Front View",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "《正面1》",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "0.9",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "2",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "0.9",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "FrontView1",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "0.9",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "2",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "9",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "S9'0",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "O.RS",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "21",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "4-2",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "0.95",
+        "page_idx": 7
+      },
+      {
+        "type": "text",
+        "text": "《左侧面》",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": "LeftView",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": "FrontView2",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": "《正面2》",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": "18",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": "16",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": "《背面》",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": "《右侧面》",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": "BackViow",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": "RightView",
+        "page_idx": 8
+      },
+      {
+        "type": "text",
+        "text": ".3",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "1.SS",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "27",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "31",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "0.",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "28",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "15",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "29",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "37",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "30",
+        "page_idx": 9
+      },
+      {
+        "type": "text",
+        "text": "PAGE",
+        "page_idx": 10
+      },
+      {
+        "type": "text",
+        "text": "Attached sheet for: ER-26-0157-01",
+        "page_idx": 6
+      },
+      {
+        "type": "text",
+        "text": "Page:   2/2",
+        "page_idx": 6
+      }
+    ],
+    "doc_id": "doc-1f15352e5855434cc7c40634174d5421",
+    "mtime": 1781709373.5365758,
+    "parse_config": {
+      "parser": "docling",
+      "parse_method": "auto"
+    },
+    "cached_at": 1781711383.8050165,
+    "cache_version": "1.0",
+    "create_time": 1781711383,
+    "update_time": 1781711383,
+    "_id": "c24838f0bbbafb46ace775d13be0ca14"
+  }
+}

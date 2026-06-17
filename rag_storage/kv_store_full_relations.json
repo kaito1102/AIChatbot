@@ -1,0 +1,82 @@
+{
+  "doc-1f15352e5855434cc7c40634174d5421": {
+    "relation_pairs": [
+      [
+        "15-Dec-2025",
+        "ECN JJR27526"
+      ],
+      [
+        "Assembly",
+        "Cover_Gear"
+      ],
+      [
+        "12-Dec-2025",
+        "ECN JJR27526"
+      ],
+      [
+        "24-Mar-2026",
+        "PE1"
+      ],
+      [
+        "ECN JJR27526",
+        "PE1"
+      ],
+      [
+        "ER-26-0157-01",
+        "R2 CONFIDENTIAL"
+      ],
+      [
+        "FA",
+        "Measurement"
+      ],
+      [
+        "FA",
+        "RS"
+      ],
+      [
+        "Assembly",
+        "Left_Cover"
+      ],
+      [
+        "Check",
+        "VPS"
+      ],
+      [
+        "Document",
+        "Measurement"
+      ],
+      [
+        "ECN JJR27526",
+        "FA"
+      ],
+      [
+        "2026-05-28",
+        "IJPE-0008"
+      ],
+      [
+        "MeasurementPOINTSOFSPACE&STEP&Paralelm",
+        "Page"
+      ],
+      [
+        "L1268",
+        "RC7-0183-000"
+      ],
+      [
+        "Gear_Cover",
+        "Right_Cover"
+      ],
+      [
+        "FA",
+        "PE1"
+      ],
+      [
+        "ER-26-0157-01",
+        "IJPE-0008"
+      ]
+    ],
+    "count": 18,
+    "create_time": 1781711449,
+    "update_time": 1781711449,
+    "_id": "doc-1f15352e5855434cc7c40634174d5421"
+  }
+}

@@ -1,0 +1,520 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d13" for="edge" attr.name="truncate" attr.type="string"/>
+<key id="d12" for="edge" attr.name="created_at" attr.type="long"/>
+<key id="d11" for="edge" attr.name="file_path" attr.type="string"/>
+<key id="d10" for="edge" attr.name="source_id" attr.type="string"/>
+<key id="d9" for="edge" attr.name="keywords" attr.type="string"/>
+<key id="d8" for="edge" attr.name="description" attr.type="string"/>
+<key id="d7" for="edge" attr.name="weight" attr.type="double"/>
+<key id="d6" for="node" attr.name="truncate" attr.type="string"/>
+<key id="d5" for="node" attr.name="created_at" attr.type="long"/>
+<key id="d4" for="node" attr.name="file_path" attr.type="string"/>
+<key id="d3" for="node" attr.name="source_id" attr.type="string"/>
+<key id="d2" for="node" attr.name="description" attr.type="string"/>
+<key id="d1" for="node" attr.name="entity_type" attr.type="string"/>
+<key id="d0" for="node" attr.name="entity_id" attr.type="string"/>
+<graph edgedefault="undirected"><node id="IJPE-0008">
+  <data key="d0">IJPE-0008</data>
+  <data key="d1">content</data>
+  <data key="d2">Technical report: 1.Background, 2.Conclusion, 3.Result</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="ER-26-0157-01">
+  <data key="d0">ER-26-0157-01</data>
+  <data key="d1">content</data>
+  <data key="d2">Technical report: 1.Background, 2.Conclusion, 3.Result</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="L1268">
+  <data key="d0">L1268</data>
+  <data key="d1">data</data>
+  <data key="d2">MODEL: TITLE: APPROVED BY: PART NO.: PURPOSE: CHECKED BY: PART NAME: ISSUED BY: DATE: EXT:</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="RC7-0183-000">
+  <data key="d0">RC7-0183-000</data>
+  <data key="d1">artifact</data>
+  <data key="d2">Part RC7-0183 have shape not good</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="MURAKAMI ATSUSHI">
+  <data key="d0">MURAKAMI ATSUSHI</data>
+  <data key="d1">person</data>
+  <data key="d2">Approved by: MURAKAMI ATSUSHI</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Ha Hoc Tu">
+  <data key="d0">Ha Hoc Tu</data>
+  <data key="d1">location</data>
+  <data key="d2">Location: Ha Hoc Tu</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="2026-05-28">
+  <data key="d0">2026-05-28</data>
+  <data key="d1">data</data>
+  <data key="d2">Issued on: 2026-05-28</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="12-Dec-2025">
+  <data key="d0">12-Dec-2025</data>
+  <data key="d1">data</data>
+  <data key="d2">Date: 12-Dec-2025</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="15-Dec-2025">
+  <data key="d0">15-Dec-2025</data>
+  <data key="d1">data</data>
+  <data key="d2">Date: 15-Dec-2025</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="2-Feb-2026">
+  <data key="d0">2-Feb-2026</data>
+  <data key="d1">data</data>
+  <data key="d2">Date: 2-Feb-2026</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="24-Mar-2026">
+  <data key="d0">24-Mar-2026</data>
+  <data key="d1">data</data>
+  <data key="d2">Date: 24-Mar-2026</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="PE1">
+  <data key="d0">PE1</data>
+  <data key="d1">method</data>
+  <data key="d2">Feedback to JP</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="FA">
+  <data key="d0">FA</data>
+  <data key="d1">method</data>
+  <data key="d2">Feedback to JP</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Right_Cover">
+  <data key="d0">Right_Cover</data>
+  <data key="d1">artifact</data>
+  <data key="d2">Part RC7-0183 have shape not good</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Gear_Cover">
+  <data key="d0">Gear_Cover</data>
+  <data key="d1">concept</data>
+  <data key="d2">Interfere between Right_Cover and Gear_Cover</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Assembly">
+  <data key="d0">Assembly</data>
+  <data key="d1">concept</data>
+  <data key="d2">Interfere with Left cover and Cover_Gear</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Check">
+  <data key="d0">Check</data>
+  <data key="d1">method</data>
+  <data key="d2">Check VPS 3D</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="VPS">
+  <data key="d0">VPS</data>
+  <data key="d1">artifact</data>
+  <data key="d2">Interfere position</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Measurement">
+  <data key="d0">Measurement</data>
+  <data key="d1">concept</data>
+  <data key="d2">Verify by document inspection &amp; record measurement result when check assembly FA</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Verification">
+  <data key="d0">Verification</data>
+  <data key="d1">method</data>
+  <data key="d2">Verify by document inspection &amp; record measurement result when check assembly FA</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Document">
+  <data key="d0">Document</data>
+  <data key="d1">artifact</data>
+  <data key="d2">Verify by document inspection &amp; record measurement result when check assembly FA</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="ECN JJR27526">
+  <data key="d0">ECN JJR27526</data>
+  <data key="d1">data</data>
+  <data key="d2">JP issue ECN JJR27526</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="RS">
+  <data key="d0">RS</data>
+  <data key="d1">data</data>
+  <data key="d2">PE1 finished FA: RS</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Page">
+  <data key="d0">Page</data>
+  <data key="d1">concept</data>
+  <data key="d2">MeasurementPOINTSOFSPACE&amp;STEP&amp;Paralelm</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="MeasurementPOINTSOFSPACE&amp;STEP&amp;Paralelm">
+  <data key="d0">MeasurementPOINTSOFSPACE&amp;STEP&amp;Paralelm</data>
+  <data key="d1">concept</data>
+  <data key="d2">MeasurementPOINTSOFSPACE&amp;STEP&amp;Paralelm</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="FrontView">
+  <data key="d0">FrontView</data>
+  <data key="d1">concept</data>
+  <data key="d2">Front View</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="FrontView1">
+  <data key="d0">FrontView1</data>
+  <data key="d1">concept</data>
+  <data key="d2">Front View1</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="LeftView">
+  <data key="d0">LeftView</data>
+  <data key="d1">concept</data>
+  <data key="d2">Left View</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="FrontView2">
+  <data key="d0">FrontView2</data>
+  <data key="d1">concept</data>
+  <data key="d2">Front View2</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="BackView">
+  <data key="d0">BackView</data>
+  <data key="d1">concept</data>
+  <data key="d2">Back View</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="RightView">
+  <data key="d0">RightView</data>
+  <data key="d1">concept</data>
+  <data key="d2">Right View</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="S9'">
+  <data key="d0">S9'</data>
+  <data key="d1">concept</data>
+  <data key="d2">S9'</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="O.RS">
+  <data key="d0">O.RS</data>
+  <data key="d1">concept</data>
+  <data key="d2">O.RS</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="4-2">
+  <data key="d0">4-2</data>
+  <data key="d1">concept</data>
+  <data key="d2">4-2</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="PAGE">
+  <data key="d0">PAGE</data>
+  <data key="d1">concept</data>
+  <data key="d2">PAGE</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="R2 CONFIDENTIAL">
+  <data key="d0">R2 CONFIDENTIAL</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d2">Attached sheet for: ER-26-0157-01</data>
+  <data key="d1">UNKNOWN</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Left_Cover">
+  <data key="d0">Left_Cover</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d2">Interfere with Left cover and Cover_Gear</data>
+  <data key="d1">UNKNOWN</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<node id="Cover_Gear">
+  <data key="d0">Cover_Gear</data>
+  <data key="d3">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d2">Interfere with Left cover and Cover_Gear</data>
+  <data key="d1">UNKNOWN</data>
+  <data key="d4">ER-26-0157-01.pdf</data>
+  <data key="d5">1781711449</data>
+  <data key="d6"></data>
+</node>
+<edge source="IJPE-0008" target="ER-26-0157-01">
+  <data key="d7">1.0</data>
+  <data key="d8">Attached sheet for: ER-26-0157-01</data>
+  <data key="d9">Content</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="IJPE-0008" target="2026-05-28">
+  <data key="d7">1.0</data>
+  <data key="d8">Issued on: 2026-05-28</data>
+  <data key="d9">Data</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="ER-26-0157-01" target="R2 CONFIDENTIAL">
+  <data key="d7">1.0</data>
+  <data key="d8">Attached sheet for: ER-26-0157-01</data>
+  <data key="d9">Artifact</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="L1268" target="RC7-0183-000">
+  <data key="d7">1.0</data>
+  <data key="d8">Part RC7-0183 have shape not good</data>
+  <data key="d9">Artifact</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="12-Dec-2025" target="ECN JJR27526">
+  <data key="d7">1.0</data>
+  <data key="d8">JP issue ECN JJR27526</data>
+  <data key="d9">Data</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="15-Dec-2025" target="ECN JJR27526">
+  <data key="d7">1.0</data>
+  <data key="d8">JP issue ECN JJR27526</data>
+  <data key="d9">Data</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="24-Mar-2026" target="PE1">
+  <data key="d7">1.0</data>
+  <data key="d8">FA for ECN</data>
+  <data key="d9">Method</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="PE1" target="FA">
+  <data key="d7">1.0</data>
+  <data key="d8">FA for ECN</data>
+  <data key="d9">Method</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="PE1" target="ECN JJR27526">
+  <data key="d7">1.0</data>
+  <data key="d8">JP issue ECN JJR27526</data>
+  <data key="d9">Data</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="FA" target="RS">
+  <data key="d7">1.0</data>
+  <data key="d8">PE1 finished FA: RS</data>
+  <data key="d9">Data</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="FA" target="Measurement">
+  <data key="d7">1.0</data>
+  <data key="d8">FA for ECN</data>
+  <data key="d9">Method</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="FA" target="ECN JJR27526">
+  <data key="d7">1.0</data>
+  <data key="d8">JP issue ECN JJR27526</data>
+  <data key="d9">Data</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="Right_Cover" target="Gear_Cover">
+  <data key="d7">1.0</data>
+  <data key="d8">Interfere between Right_Cover and Gear_Cover</data>
+  <data key="d9">Concept</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="Assembly" target="Left_Cover">
+  <data key="d7">1.0</data>
+  <data key="d8">Interfere with Left cover and Cover_Gear</data>
+  <data key="d9">Concept</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="Assembly" target="Cover_Gear">
+  <data key="d7">1.0</data>
+  <data key="d8">Interfere with Left cover and Cover_Gear</data>
+  <data key="d9">Concept</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="Check" target="VPS">
+  <data key="d7">1.0</data>
+  <data key="d8">Interfere position</data>
+  <data key="d9">Artifact</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="Measurement" target="Document">
+  <data key="d7">1.0</data>
+  <data key="d8">Verify by document inspection &amp; record measurement result when check assembly FA</data>
+  <data key="d9">Artifact</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+<edge source="Page" target="MeasurementPOINTSOFSPACE&amp;STEP&amp;Paralelm">
+  <data key="d7">1.0</data>
+  <data key="d8">MeasurementPOINTSOFSPACE&amp;STEP&amp;Paralelm</data>
+  <data key="d9">Concept</data>
+  <data key="d10">doc-1f15352e5855434cc7c40634174d5421-chunk-000</data>
+  <data key="d11">ER-26-0157-01.pdf</data>
+  <data key="d12">1781711449</data>
+  <data key="d13"></data>
+</edge>
+</graph></graphml>

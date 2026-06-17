@@ -1,0 +1,30 @@
+{
+  "doc-1f15352e5855434cc7c40634174d5421": {
+    "status": "processed",
+    "content_summary": "R2CVN TRADESECRET\n\nENGINEERING REPORT\n\nIJPE-0008\n\nAttachment 01/Rev04\n\nISSUE NO.:\n\nER-26-0157-01\n\nAPPROVED BY:\n\nMURAKAMI ATSUSHI\n\nAPPROVED\n\nNG\n\nMODEL:\n\nTITLE:\n\nAPPROVED BY:\n\nPART NO.:\n\nPURPOSE:\n\nCHECKED BY:\n\nPART NAME:\n\nISSUED BY:\n\nDATE:\n\nEXT:\n\nDETAI...",
+    "content_length": 2801,
+    "created_at": "2026-06-17T15:49:43.808669+00:00",
+    "updated_at": "2026-06-17T15:51:08+00:00",
+    "file_path": "ER-26-0157-01.pdf",
+    "track_id": "insert_20260617_224943_1cee6e2d",
+    "content_hash": "103e2d4ddd3de46bede16be0d6b9781d",
+    "metadata": {
+      "parse_start_time": 1781711383,
+      "parse_stage_skipped": true,
+      "parse_format": "raw",
+      "parse_engine": "legacy",
+      "analyzing_start_time": 1781711383,
+      "analyzing_stage_skipped": true,
+      "process_start_time": 1781711383,
+      "process_end_time": 1781711449,
+      "chunk_method": "legacy_chunking_func",
+      "chunk_opts": "size=1200, split_only=False, overlap=100"
+    },
+    "chunks_count": 1,
+    "chunks_list": [
+      "doc-1f15352e5855434cc7c40634174d5421-chunk-000"
+    ],
+    "error_msg": "",
+    "multimodal_processed": true
+  }
+}
