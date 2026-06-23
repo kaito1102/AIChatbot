@@ -179,6 +179,87 @@ def _is_layout_border(tbl_obj, page_width: float, page_height: float) -> bool:
     return structured_rows < 2
 
 
+def _find_header_clip_bottom(page) -> float | None:
+    """
+    Tìm đường kẻ ngang cuối cùng của vùng header (MODEL/TITLE/PART NO…).
+
+    Engineering Report layout luôn có một dải header cố định ở đầu trang,
+    giới hạn bởi các đường kẻ ngang chạy full-width. Hàm này tìm đường kẻ
+    thấp nhất trong khoảng 15–40% chiều cao trang — đó là đáy của header block.
+
+    Trả về tọa độ Y của đường kẻ đó, hoặc None nếu không tìm thấy.
+    """
+    wide_h_lines = sorted(
+        r['top']
+        for r in (page.rects or [])
+        if (r['x1'] - r['x0']) > page.width * 0.5   # rộng hơn 50% trang
+        and (r['bottom'] - r['top']) < 5             # mỏng → là đường kẻ
+    )
+    candidates = [
+        y for y in wide_h_lines
+        if 0.15 * page.height < y < 0.40 * page.height
+    ]
+    return max(candidates) if candidates else None
+
+
+def _table_to_markdown_clipped(page, tbl_obj, clip_bottom: float) -> tuple[str, tuple]:
+    """
+    Build markdown từ tbl_obj nhưng chỉ lấy các cells có top < clip_bottom.
+
+    Dùng khi bảng header bị pdfplumber phình xuống cuối trang (do border dọc).
+    Thay vì crop page rồi re-detect (mất đường kẻ dọc), ta lọc trực tiếp
+    trên cells của tbl_obj — vẫn dùng tọa độ gốc để extract text chính xác.
+
+    Trả về (markdown_string, clipped_bbox).
+    """
+    cells_in = [c for c in tbl_obj.cells if c[1] < clip_bottom - 1]
+    if not cells_in:
+        return "", tbl_obj.bbox
+
+    # Tính bbox của vùng bị giữ lại
+    cx0 = min(c[0] for c in cells_in)
+    ctop = min(c[1] for c in cells_in)
+    cx1 = max(c[2] for c in cells_in)
+    cbot = max(c[3] for c in cells_in)
+    clipped_bbox = (cx0, ctop, cx1, cbot)
+
+    # Build grid từ cells đã lọc
+    col_starts = sorted(set(round(c[0], 1) for c in cells_in))
+    row_starts = sorted(set(round(c[1], 1) for c in cells_in))
+    n_cols = len(col_starts)
+    n_rows = len(row_starts)
+
+    raw: dict[tuple, str] = {}
+    for cell in cells_in:
+        x0c, topc, x1c, botc = cell
+        col_idx = col_starts.index(round(x0c, 1))
+        row_idx = row_starts.index(round(topc, 1))
+        text = _clean_cell_text(page.within_bbox(cell).extract_text() or "")
+        span = sum(1 for r in range(row_idx + 1, n_rows) if row_starts[r] < botc - 0.5)
+        key = (col_idx, row_idx)
+        raw[key] = (raw.get(key, "") + " " + text).strip() if key in raw else text
+        for r in range(row_idx + 1, row_idx + 1 + span):
+            raw.setdefault((col_idx, r), "__SPAN__")
+
+    grid = [[raw.get((c, r), "") for c in range(n_cols)] for r in range(n_rows)]
+
+    # Dọn và render
+    for row in grid:
+        for c in range(n_cols):
+            if row[c] == "__SPAN__":
+                row[c] = ""
+    grid = [r for r in grid if any(v for v in r)]
+    if len(grid) < 2:
+        return "", clipped_bbox
+
+    header, body = grid[0], grid[1:]
+    md  = "| " + " | ".join(header) + " |\n"
+    md += "| " + " | ".join(["---"] * n_cols) + " |\n"
+    for row in body:
+        md += "| " + " | ".join(row) + " |\n"
+    return md.strip(), clipped_bbox
+
+
 def _is_header_table(table: list, page_num: int) -> bool:
     """
     Phát hiện bảng header lặp lại (ISSUE NO., MODEL, TITLE …).
@@ -269,23 +350,53 @@ def _build_page_document(
         x0, top, x1, bottom = tbl_obj.bbox
 
         # ── Lọc layout border giả bảng ────────────────────────────────
-        # Các trang dạng Engineering Report / Attached Sheet thường có
-        # một rectangle lớn bao quanh layout → bị nhận nhầm là table.
-        # Bỏ qua nếu bbox chiếm > 50% diện tích trang.
         if _is_layout_border(tbl_obj, page.width, page.height):
             continue
 
-        # _is_header_table still needs raw data for keyword check
-        raw_data = tbl_obj.extract() or []
-        if skip_repeated_header and _is_header_table(raw_data, page_num):
-            continue
-        md = _table_to_markdown(page, tbl_obj)
+        # ── Clip bảng header bị phình to ──────────────────────────────
+        # Bảng trang 1 của Engineering Report đôi khi kéo dài xuống tận
+        # cuối trang (bbox ratio > 0.5) vì border dọc của trang bị nhận
+        # nhầm là cạnh bảng. Nội dung thật của header chỉ nằm trong vùng
+        # trên cùng, giới hạn bởi đường kẻ ngang cuối của header block.
+        # → Clip bảng tại đó để markdown chỉ chứa các field header thật.
+        area_ratio = ((x1 - x0) * (bottom - top)) / (page.width * page.height)
+
+        # ── Clip bảng header bị phình to ──────────────────────────────
+        # Bảng header trang 1 đôi khi kéo dài xuống tận cuối trang vì
+        # border dọc của trang bị pdfplumber nhận nhầm là cạnh bảng.
+        # Nội dung thật của header chỉ nằm trong vùng trên cùng, giới
+        # hạn bởi đường kẻ ngang cuối (clip_y). Ta build markdown trực
+        # tiếp từ cells có top < clip_y, không crop page (để giữ đường
+        # kẻ dọc, đảm bảo extract text chính xác).
+        if area_ratio > 0.5:
+            clip_y = _find_header_clip_bottom(page)
+            if clip_y and clip_y < bottom - 10:
+                md, effective_bbox = _table_to_markdown_clipped(page, tbl_obj, clip_y)
+            else:
+                md = _table_to_markdown(page, tbl_obj)
+                effective_bbox = tbl_obj.bbox
+        else:
+            md = _table_to_markdown(page, tbl_obj)
+            effective_bbox = tbl_obj.bbox
+
+        # _is_header_table check dùng raw data từ vùng đã clip
+        if skip_repeated_header:
+            ex0, etop, ex1, ebot = effective_bbox
+            raw_data = [
+                [_clean_cell_text(page.within_bbox(c).extract_text() or "")
+                 for c in [c2 for c2 in tbl_obj.cells if round(c2[1],1) == round(r_top,1)]]
+                for r_top in sorted(set(round(c[1],1) for c in tbl_obj.cells if c[1] < ebot))
+            ]
+            if _is_header_table(raw_data, page_num):
+                continue
+
         if md:
-            kept_table_bboxes.append(tbl_obj.bbox)
+            ex0, etop, ex1, ebot = effective_bbox
+            kept_table_bboxes.append(effective_bbox)
             tables_with_pos.append({
                 "markdown": md,
-                "y_mid": (top + bottom) / 2,
-                "top": top,
+                "y_mid": (etop + ebot) / 2,
+                "top": etop,
             })
 
     # ── 2. Thu thập ảnh ───────────────────────────────────────────────
