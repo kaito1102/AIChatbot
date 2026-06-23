@@ -1,0 +1,580 @@
+"""
+smart_pdf_loader.py  —  chiến lược "1 trang = 1 Document"
+
+Thay đổi so với phiên bản cũ
+────────────────────────────
+1. KHÔNG tách chunk theo từng ảnh.
+   Thay vào đó, ảnh được chèn inline dưới dạng [IMAGE: tên_file] đúng vị trí
+   Y trong luồng text → mỗi trang vẫn là 1 Document duy nhất.
+
+2. Bảng cũng được chèn inline theo vị trí Y, không tạo chunk riêng.
+   Điều này giữ nguyên ngữ cảnh "header table + body text" trên cùng 1 trang.
+
+3. Metadata bổ sung:
+   - image_paths  : danh sách tất cả ảnh trên trang (có thể nhiều ảnh)
+   - table_count  : số bảng trên trang
+   - image_count  : số ảnh trên trang
+
+4. load_directory_smart giữ nguyên interface, chỉ dùng load_pdf_smart mới.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+from typing import List
+
+import pdfplumber
+from langchain_core.documents import Document
+
+
+# ──────────────────────────────────────────────
+# Internal helpers
+# ──────────────────────────────────────────────
+
+def _safe_name(filename: str) -> str:
+    stem = Path(filename).stem
+    return re.sub(r"[^\w\-]", "_", stem)
+
+
+def _clean_text(text: str) -> str:
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _clean_cell_text(text: str) -> str:
+    """Collapse in-cell newlines (multi-line PDF cells) to single space."""
+    if not text:
+        return ""
+    return re.sub(r"\s*\n\s*", " ", text).strip()
+
+
+def _table_to_markdown(page, table_obj) -> str:
+    """
+    Build a clean markdown table from a pdfplumber table object.
+
+    Handles two common PDF table quirks:
+    1. In-cell newlines  — collapsed to space via _clean_cell_text
+    2. Label-value split — PDF sometimes splits "LABEL:" and its value
+       into adjacent rows in the same column (e.g. "PART NO." / "RC7-0183-000").
+       These are merged when the upper cell ends with ":" (label pattern).
+    3. Span detection   — cells whose bottom crosses the next row boundary
+       are treated as spanning; spanned slots are suppressed.
+    """
+    cells = table_obj.cells
+    if not cells:
+        return ""
+
+    col_starts = sorted(set(round(c[0], 1) for c in cells))
+    row_starts = sorted(set(round(c[1], 1) for c in cells))
+    n_cols = len(col_starts)
+    n_rows = len(row_starts)
+
+    # ── Build raw grid ────────────────────────────────────────────────
+    raw: dict[tuple, str] = {}
+    for cell in cells:
+        x0, top, x1, bottom = cell
+        col_idx = col_starts.index(round(x0, 1))
+        row_idx = row_starts.index(round(top, 1))
+        text = _clean_cell_text(page.within_bbox(cell).extract_text() or "")
+        span = sum(1 for r in range(row_idx + 1, n_rows) if row_starts[r] < bottom - 0.5)
+        key = (col_idx, row_idx)
+        raw[key] = (raw.get(key, "") + " " + text).strip() if key in raw else text
+        for r in range(row_idx + 1, row_idx + 1 + span):
+            raw.setdefault((col_idx, r), "__SPAN__")
+
+    grid = [[raw.get((c, r), "") for c in range(n_cols)] for r in range(n_rows)]
+
+    def active_cols(row):
+        return [c for c in range(n_cols) if row[c] and row[c] != "__SPAN__"]
+
+    def should_merge_up(prev, cur) -> bool:
+        """Merge cur into prev only for label-value pattern or empty rows."""
+        cur_active = active_cols(cur)
+        if not cur_active:
+            return True  # empty row → skip
+
+        for c in cur_active:
+            p = prev[c]
+            if not p or p == "__SPAN__":
+                # Prev slot empty — only merge if prev already has other data
+                # (i.e., this isn't just "filling a new independent row")
+                if any(v and v != "__SPAN__" for v in prev):
+                    return False
+            elif p.rstrip().endswith(":"):
+                pass  # label → value pattern, ok to merge
+            else:
+                return False  # prev already has non-label content → new row
+        return True
+
+    # ── Merge rows ────────────────────────────────────────────────────
+    merged: list[list] = [grid[0][:]]
+    for r in range(1, n_rows):
+        cur = grid[r]
+        if not any(v and v != "__SPAN__" for v in cur):
+            continue  # entirely empty/spanned → skip
+        if should_merge_up(merged[-1], cur):
+            for c in range(n_cols):
+                v = cur[c]
+                if v and v != "__SPAN__":
+                    p = merged[-1][c]
+                    merged[-1][c] = ((p + " ") if p and p != "__SPAN__" else "") + v
+        else:
+            merged.append(cur[:])
+
+    # ── Clean up ──────────────────────────────────────────────────────
+    for row in merged:
+        for c in range(n_cols):
+            if row[c] == "__SPAN__":
+                row[c] = ""
+    merged = [r for r in merged if any(v for v in r)]
+    if len(merged) < 2:
+        return ""  # header-only table → not useful
+
+    header, body = merged[0], merged[1:]
+    md  = "| " + " | ".join(header) + " |\n"
+    md += "| " + " | ".join(["---"] * n_cols) + " |\n"
+    for row in body:
+        md += "| " + " | ".join(row) + " |\n"
+    return md.strip()
+
+
+def _is_layout_border(tbl_obj, page_width: float, page_height: float) -> bool:
+    """
+    Phát hiện bảng "giả" — thực ra là đường viền layout bao quanh trang.
+
+    PDF dạng Engineering Report / Attached Sheet thường có một rectangle lớn
+    bao quanh toàn bộ nội dung trang. pdfplumber nhận diện đó là table cells,
+    khiến toàn bộ text bị gom vào 1 markdown table thay vì plain text.
+
+    Heuristic kết hợp 2 điều kiện (cả 2 phải đúng):
+
+    1. Area ratio > 0.5  — bbox chiếm hơn nửa diện tích trang.
+       Bảng dữ liệu thật hiếm khi to hơn 50% trang (trừ bảng header
+       Engineering Report trang 1, nhưng nó vượt được điều kiện #2).
+
+    2. structured_rows < 2 — số hàng có ít nhất 2 ô nonempty < 2.
+       Bảng thật luôn có ít nhất 2 hàng có dữ liệu ở nhiều cột.
+       Layout border bị nhận nhầm thường chỉ có vài ô rải rác.
+
+    Nếu chỉ dùng ratio: bảng header trang 1 (ratio=0.88, struct_rows=3)
+    bị lọc oan. Kết hợp cả 2 điều kiện giải quyết được trường hợp này.
+    """
+    x0, top, x1, bottom = tbl_obj.bbox
+    page_area = page_width * page_height
+    if page_area <= 0:
+        return False
+
+    area_ratio = ((x1 - x0) * (bottom - top)) / page_area
+    if area_ratio <= 0.5:
+        return False  # Bảng nhỏ → chắc chắn không phải layout border
+
+    # Bảng lớn: kiểm tra thêm có "dữ liệu thật" không
+    data = tbl_obj.extract() or []
+    structured_rows = sum(
+        1 for row in data
+        if sum(1 for cell in row if cell and str(cell).strip()) >= 2
+    )
+    return structured_rows < 2
+
+
+def _find_header_clip_bottom(page) -> float | None:
+    """
+    Tìm đường kẻ ngang cuối cùng của vùng header (MODEL/TITLE/PART NO…).
+
+    Engineering Report layout luôn có một dải header cố định ở đầu trang,
+    giới hạn bởi các đường kẻ ngang chạy full-width. Hàm này tìm đường kẻ
+    thấp nhất trong khoảng 15–40% chiều cao trang — đó là đáy của header block.
+
+    Trả về tọa độ Y của đường kẻ đó, hoặc None nếu không tìm thấy.
+    """
+    wide_h_lines = sorted(
+        r['top']
+        for r in (page.rects or [])
+        if (r['x1'] - r['x0']) > page.width * 0.5   # rộng hơn 50% trang
+        and (r['bottom'] - r['top']) < 5             # mỏng → là đường kẻ
+    )
+    candidates = [
+        y for y in wide_h_lines
+        if 0.15 * page.height < y < 0.40 * page.height
+    ]
+    return max(candidates) if candidates else None
+
+
+def _table_to_markdown_clipped(page, tbl_obj, clip_bottom: float) -> tuple[str, tuple]:
+    """
+    Build markdown từ tbl_obj nhưng chỉ lấy các cells có top < clip_bottom.
+
+    Dùng khi bảng header bị pdfplumber phình xuống cuối trang (do border dọc).
+    Thay vì crop page rồi re-detect (mất đường kẻ dọc), ta lọc trực tiếp
+    trên cells của tbl_obj — vẫn dùng tọa độ gốc để extract text chính xác.
+
+    Trả về (markdown_string, clipped_bbox).
+    """
+    cells_in = [c for c in tbl_obj.cells if c[1] < clip_bottom - 1]
+    if not cells_in:
+        return "", tbl_obj.bbox
+
+    # Tính bbox của vùng bị giữ lại
+    cx0 = min(c[0] for c in cells_in)
+    ctop = min(c[1] for c in cells_in)
+    cx1 = max(c[2] for c in cells_in)
+    cbot = max(c[3] for c in cells_in)
+    clipped_bbox = (cx0, ctop, cx1, cbot)
+
+    # Build grid từ cells đã lọc
+    col_starts = sorted(set(round(c[0], 1) for c in cells_in))
+    row_starts = sorted(set(round(c[1], 1) for c in cells_in))
+    n_cols = len(col_starts)
+    n_rows = len(row_starts)
+
+    raw: dict[tuple, str] = {}
+    for cell in cells_in:
+        x0c, topc, x1c, botc = cell
+        col_idx = col_starts.index(round(x0c, 1))
+        row_idx = row_starts.index(round(topc, 1))
+        text = _clean_cell_text(page.within_bbox(cell).extract_text() or "")
+        span = sum(1 for r in range(row_idx + 1, n_rows) if row_starts[r] < botc - 0.5)
+        key = (col_idx, row_idx)
+        raw[key] = (raw.get(key, "") + " " + text).strip() if key in raw else text
+        for r in range(row_idx + 1, row_idx + 1 + span):
+            raw.setdefault((col_idx, r), "__SPAN__")
+
+    grid = [[raw.get((c, r), "") for c in range(n_cols)] for r in range(n_rows)]
+
+    # Dọn và render
+    for row in grid:
+        for c in range(n_cols):
+            if row[c] == "__SPAN__":
+                row[c] = ""
+    grid = [r for r in grid if any(v for v in r)]
+    if len(grid) < 2:
+        return "", clipped_bbox
+
+    header, body = grid[0], grid[1:]
+    md  = "| " + " | ".join(header) + " |\n"
+    md += "| " + " | ".join(["---"] * n_cols) + " |\n"
+    for row in body:
+        md += "| " + " | ".join(row) + " |\n"
+    return md.strip(), clipped_bbox
+
+
+def _is_header_table(table: list, page_num: int) -> bool:
+    """
+    Phát hiện bảng header lặp lại (ISSUE NO., MODEL, TITLE …).
+    Nếu trang > 1 và bảng chứa từ khoá đặc trưng của header thì bỏ qua.
+    """
+    if page_num <= 1:
+        return False
+    flat = " ".join(
+        cell for row in table for cell in row if cell
+    ).upper()
+    keywords = {"ISSUE NO", "MODEL", "APPROVED BY", "CHECKED BY", "ISSUED BY",
+                "ENGINEERING REPORT", "ATTACHED SHEET", "IJPE"}
+    hits = sum(1 for kw in keywords if kw in flat)
+    return hits >= 3
+
+
+def _extract_images_with_position(
+    page,
+    filename: str,
+    page_num: int,
+    image_dir: str,
+    min_size: int = 100,
+) -> list[dict]:
+    """Lưu ảnh ra đĩa, trả về list dict với tọa độ Y trung bình để sắp xếp."""
+    saved: list[dict] = []
+    stem = _safe_name(filename)
+
+    for idx, img_obj in enumerate(page.images):
+        try:
+            x0 = img_obj.get("x0", 0)
+            top = img_obj.get("top", 0)
+            x1 = img_obj.get("x1", page.width)
+            bottom = img_obj.get("bottom", page.height)
+
+            if (x1 - x0) < min_size or (bottom - top) < min_size:
+                continue
+
+            cropped = page.within_bbox((x0, top, x1, bottom))
+            pil_img = cropped.to_image(resolution=150).original
+
+            img_name = f"{stem}_p{page_num:03d}_{idx:02d}.png"
+            img_path = os.path.join(image_dir, img_name)
+            pil_img.save(img_path, format="PNG", optimize=True)
+
+            saved.append({
+                "path": img_path,
+                "name": img_name,
+                "y_mid": (top + bottom) / 2,   # dùng để sort inline
+                "top": top,
+                "bottom": bottom,
+                "x0": x0,
+                "x1": x1,
+            })
+        except Exception as e:
+            print(f"⚠️  Cannot extract image idx={idx} page={page_num}: {e}")
+
+    return saved
+
+
+# ──────────────────────────────────────────────
+# Core per-page builder
+# ──────────────────────────────────────────────
+
+def _build_page_document(
+    page,
+    filename: str,
+    total_pages: int,
+    image_dir: str,
+    min_image_size: int,
+    skip_repeated_header: bool,
+) -> Document | None:
+    """
+    Xây dựng 1 Document cho toàn bộ trang bằng cách ghép text + bảng + ảnh
+    theo thứ tự vị trí Y từ trên xuống dưới.
+    """
+    page_num = page.page_number
+
+    # ── 1. Thu thập bảng (với vị trí Y) ──────────────────────────────
+    table_finder = page.find_tables() or []
+
+    tables_with_pos: list[dict] = []
+    # kept_table_bboxes: chỉ gồm các bảng THỰC SỰ được giữ lại.
+    # Dùng để lọc words ở bước 3 — không dùng bbox của layout border
+    # vì nếu dùng thì toàn bộ words trên trang sẽ bị loại nhầm.
+    kept_table_bboxes: list[tuple] = []
+
+    for tbl_obj in table_finder:
+        x0, top, x1, bottom = tbl_obj.bbox
+
+        # ── Lọc layout border giả bảng ────────────────────────────────
+        if _is_layout_border(tbl_obj, page.width, page.height):
+            continue
+
+        # ── Clip bảng header bị phình to ──────────────────────────────
+        # Bảng trang 1 của Engineering Report đôi khi kéo dài xuống tận
+        # cuối trang (bbox ratio > 0.5) vì border dọc của trang bị nhận
+        # nhầm là cạnh bảng. Nội dung thật của header chỉ nằm trong vùng
+        # trên cùng, giới hạn bởi đường kẻ ngang cuối của header block.
+        # → Clip bảng tại đó để markdown chỉ chứa các field header thật.
+        area_ratio = ((x1 - x0) * (bottom - top)) / (page.width * page.height)
+
+        # ── Clip bảng header bị phình to ──────────────────────────────
+        # Bảng header trang 1 đôi khi kéo dài xuống tận cuối trang vì
+        # border dọc của trang bị pdfplumber nhận nhầm là cạnh bảng.
+        # Nội dung thật của header chỉ nằm trong vùng trên cùng, giới
+        # hạn bởi đường kẻ ngang cuối (clip_y). Ta build markdown trực
+        # tiếp từ cells có top < clip_y, không crop page (để giữ đường
+        # kẻ dọc, đảm bảo extract text chính xác).
+        if area_ratio > 0.5:
+            clip_y = _find_header_clip_bottom(page)
+            if clip_y and clip_y < bottom - 10:
+                md, effective_bbox = _table_to_markdown_clipped(page, tbl_obj, clip_y)
+            else:
+                md = _table_to_markdown(page, tbl_obj)
+                effective_bbox = tbl_obj.bbox
+        else:
+            md = _table_to_markdown(page, tbl_obj)
+            effective_bbox = tbl_obj.bbox
+
+        # _is_header_table check dùng raw data từ vùng đã clip
+        if skip_repeated_header:
+            ex0, etop, ex1, ebot = effective_bbox
+            raw_data = [
+                [_clean_cell_text(page.within_bbox(c).extract_text() or "")
+                 for c in [c2 for c2 in tbl_obj.cells if round(c2[1],1) == round(r_top,1)]]
+                for r_top in sorted(set(round(c[1],1) for c in tbl_obj.cells if c[1] < ebot))
+            ]
+            if _is_header_table(raw_data, page_num):
+                continue
+
+        if md:
+            ex0, etop, ex1, ebot = effective_bbox
+            kept_table_bboxes.append(effective_bbox)
+            tables_with_pos.append({
+                "markdown": md,
+                "y_mid": (etop + ebot) / 2,
+                "top": etop,
+            })
+
+    # ── 2. Thu thập ảnh ───────────────────────────────────────────────
+    images = _extract_images_with_position(
+        page, filename, page_num, image_dir, min_size=min_image_size
+    )
+
+    # ── 3. Trích text ngoài vùng bảng ────────────────────────────────
+    def _in_any_table(w) -> bool:
+        for x0t, topt, x1t, bottomt in kept_table_bboxes:
+            if w["x0"] < x1t and w["x1"] > x0t and w["top"] < bottomt and w["bottom"] > topt:
+                return True
+        return False
+
+    words = page.extract_words(x_tolerance=3, y_tolerance=3) or []
+    non_table_words = [w for w in words if not _in_any_table(w)]
+
+    # Nhóm words thành dòng, giữ tọa độ Y để sort sau
+    line_map: dict[int, list[str]] = {}
+    for w in non_table_words:
+        key = round(w["top"])
+        line_map.setdefault(key, []).append(w["text"])
+
+    text_lines: list[dict] = [
+        {"text": " ".join(tokens), "y_mid": y, "type": "text"}
+        for y, tokens in sorted(line_map.items())
+    ]
+
+    # ── 4. Gộp tất cả phần tử theo thứ tự Y ─────────────────────────
+    elements: list[dict] = []
+
+    for item in text_lines:
+        elements.append({"y": item["y_mid"], "kind": "text", "content": item["text"]})
+
+    for tbl in tables_with_pos:
+        elements.append({"y": tbl["y_mid"], "kind": "table", "content": tbl["markdown"]})
+
+    for img in images:
+        label = f"[IMAGE: {img['name']}]"
+        elements.append({"y": img["y_mid"], "kind": "image", "content": label})
+
+    elements.sort(key=lambda e: e["y"])
+
+    # ── 5. Render thành chuỗi văn bản ────────────────────────────────
+    parts: list[str] = []
+    prev_kind = None
+    for el in elements:
+        content = el["content"].strip()
+        if not content:
+            continue
+        # Thêm dòng trống giữa text và bảng/ảnh để dễ đọc
+        if prev_kind and el["kind"] != prev_kind:
+            parts.append("")
+        parts.append(content)
+        prev_kind = el["kind"]
+
+    page_content = _clean_text("\n".join(parts))
+    if not page_content:
+        return None
+
+    return Document(
+        page_content=page_content,
+        metadata={
+            "source": str(Path(filename).resolve()) if os.path.exists(filename) else filename,
+            "filename": os.path.basename(filename),
+            "page": page_num,
+            "total_pages": total_pages,
+            "has_table": bool(tables_with_pos),
+            "has_image": bool(images),
+            "table_count": len(tables_with_pos),
+            "image_count": len(images),
+            # Danh sách path (dùng cho RAG retrieve)
+            "image_paths": [img["path"] for img in images],
+            # Tọa độ từng ảnh (dùng cho preview / debug)
+            # Format: [{"path":..., "name":..., "x0":..., "x1":..., "top":..., "bottom":...}, ...]
+            "images_meta": [
+                {
+                    "path":   img["path"],
+                    "name":   img["name"],
+                    "x0":     img["x0"],
+                    "x1":     img["x1"],
+                    "top":    img["top"],
+                    "bottom": img["bottom"],
+                }
+                for img in images
+            ],
+        },
+    )
+
+
+# ──────────────────────────────────────────────
+# Public API
+# ──────────────────────────────────────────────
+
+def load_pdf_smart(
+    pdf_path: str,
+    chunk_by: str = "page",               # giữ param để tương thích
+    table_format: str = "markdown",
+    image_dir: str = "extracted_images",
+    min_image_size: int = 100,
+    include_page_images: bool = True,      # giữ param để tương thích
+    skip_repeated_header: bool = True,     # NEW: bỏ qua bảng header lặp
+) -> List[Document]:
+    """
+    Load PDF, trả về list Document (1 doc / trang).
+
+    Thay đổi chính so với phiên bản cũ
+    ─────────────────────────────────────
+    • Mỗi trang = 1 Document duy nhất (không tách theo ảnh hay bảng).
+    • Text, bảng, ảnh được sắp xếp inline theo tọa độ Y.
+    • Bảng header lặp lại (trang ≥ 2) được lọc nếu skip_repeated_header=True.
+    • Metadata bổ sung: table_count, image_count (thay vì chỉ has_table/has_image).
+    """
+    pdf_path = str(pdf_path)
+    filename = os.path.basename(pdf_path)
+    os.makedirs(image_dir, exist_ok=True)
+    docs: List[Document] = []
+
+    with pdfplumber.open(pdf_path) as pdf:
+        total_pages = len(pdf.pages)
+        for page in pdf.pages:
+            doc = _build_page_document(
+                page=page,
+                filename=pdf_path,
+                total_pages=total_pages,
+                image_dir=image_dir,
+                min_image_size=min_image_size,
+                skip_repeated_header=skip_repeated_header,
+            )
+            if doc:
+                docs.append(doc)
+
+    return docs
+
+
+def load_directory_smart(
+    data_dir: str,
+    pdf_kwargs: dict | None = None,
+) -> List[Document]:
+    """Duyệt thư mục, load PDF / TXT / MD / DOCX."""
+    from langchain_community.document_loaders import TextLoader
+
+    pdf_kwargs = pdf_kwargs or {}
+    all_docs: List[Document] = []
+    data_path = Path(data_dir)
+
+    for fpath in sorted(data_path.rglob("*")):
+        if not fpath.is_file():
+            continue
+
+        suffix = fpath.suffix.lower()
+
+        try:
+            if suffix == ".pdf":
+                docs = load_pdf_smart(str(fpath), **pdf_kwargs)
+                print(f"📄 {fpath.name}: {len(docs)} pages loaded")
+
+            elif suffix in (".txt", ".md"):
+                loader = TextLoader(str(fpath), encoding="utf-8")
+                docs = loader.load()
+                print(f"📝 {fpath.name}: {len(docs)} docs loaded")
+
+            elif suffix == ".docx":
+                try:
+                    from langchain_community.document_loaders import Docx2txtLoader
+                    loader = Docx2txtLoader(str(fpath))
+                    docs = loader.load()
+                    print(f"📝 {fpath.name}: {len(docs)} docs loaded")
+                except ImportError:
+                    print(f"⚠️  Skipped {fpath.name} (pip install docx2txt)")
+                    continue
+
+            else:
+                continue
+
+            all_docs.extend(docs)
+
+        except Exception as e:
+            print(f"❌ Failed to load {fpath.name}: {e}")
+
+    return all_docs
