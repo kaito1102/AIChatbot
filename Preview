@@ -140,24 +140,43 @@ def _table_to_markdown(page, table_obj) -> str:
     return md.strip()
 
 
-def _is_layout_border(tbl_bbox: tuple, page_width: float, page_height: float,
-                       area_ratio_threshold: float = 0.5) -> bool:
+def _is_layout_border(tbl_obj, page_width: float, page_height: float) -> bool:
     """
     Phát hiện bảng "giả" — thực ra là đường viền layout bao quanh trang.
 
-    PDF như Engineering Report, Attached Sheet thường dùng một rectangle lớn
-    bao quanh toàn bộ nội dung. pdfplumber nhận diện đó là table cells,
-    khiến mọi text trong trang bị gom vào 1 markdown table.
+    PDF dạng Engineering Report / Attached Sheet thường có một rectangle lớn
+    bao quanh toàn bộ nội dung trang. pdfplumber nhận diện đó là table cells,
+    khiến toàn bộ text bị gom vào 1 markdown table thay vì plain text.
 
-    Heuristic: nếu diện tích bbox của bảng chiếm > 50% diện tích trang
-    thì đây gần như chắc chắn là layout border, không phải bảng dữ liệu.
+    Heuristic kết hợp 2 điều kiện (cả 2 phải đúng):
+
+    1. Area ratio > 0.5  — bbox chiếm hơn nửa diện tích trang.
+       Bảng dữ liệu thật hiếm khi to hơn 50% trang (trừ bảng header
+       Engineering Report trang 1, nhưng nó vượt được điều kiện #2).
+
+    2. structured_rows < 2 — số hàng có ít nhất 2 ô nonempty < 2.
+       Bảng thật luôn có ít nhất 2 hàng có dữ liệu ở nhiều cột.
+       Layout border bị nhận nhầm thường chỉ có vài ô rải rác.
+
+    Nếu chỉ dùng ratio: bảng header trang 1 (ratio=0.88, struct_rows=3)
+    bị lọc oan. Kết hợp cả 2 điều kiện giải quyết được trường hợp này.
     """
-    x0, top, x1, bottom = tbl_bbox
-    tbl_area = (x1 - x0) * (bottom - top)
+    x0, top, x1, bottom = tbl_obj.bbox
     page_area = page_width * page_height
     if page_area <= 0:
         return False
-    return (tbl_area / page_area) > area_ratio_threshold
+
+    area_ratio = ((x1 - x0) * (bottom - top)) / page_area
+    if area_ratio <= 0.5:
+        return False  # Bảng nhỏ → chắc chắn không phải layout border
+
+    # Bảng lớn: kiểm tra thêm có "dữ liệu thật" không
+    data = tbl_obj.extract() or []
+    structured_rows = sum(
+        1 for row in data
+        if sum(1 for cell in row if cell and str(cell).strip()) >= 2
+    )
+    return structured_rows < 2
 
 
 def _is_header_table(table: list, page_num: int) -> bool:
@@ -253,7 +272,7 @@ def _build_page_document(
         # Các trang dạng Engineering Report / Attached Sheet thường có
         # một rectangle lớn bao quanh layout → bị nhận nhầm là table.
         # Bỏ qua nếu bbox chiếm > 50% diện tích trang.
-        if _is_layout_border(tbl_obj.bbox, page.width, page.height):
+        if _is_layout_border(tbl_obj, page.width, page.height):
             continue
 
         # _is_header_table still needs raw data for keyword check
