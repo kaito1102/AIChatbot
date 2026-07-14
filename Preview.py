@@ -86,6 +86,35 @@ def detect_tables_dl(image_path, processor, model, threshold=TABLE_DETECT_THRESH
     return boxes
 
 
+def debug_all_scores(image_path, processor, model):
+    """
+    CHẨN ĐOÁN: in ra TẤT CẢ box mà model tìm thấy, không lọc theo threshold,
+    để biết model có tín hiệu gì không và nên đặt TABLE_DETECT_THRESHOLD bao nhiêu.
+    Chạy: python ocr_pdf_pipeline_v3_tabletransformer.py --debug-scores page.png
+    """
+    boxes = detect_tables_dl(image_path, processor, model, threshold=0.01)
+    boxes.sort(key=lambda b: -b[4])
+    print(f"\n=== TẤT CẢ {len(boxes)} box tìm được (threshold=0.01, sắp theo điểm giảm dần) ===")
+    if not boxes:
+        print("Model không trả về BẤT KỲ box nào, kể cả threshold gần 0.")
+        print("-> Model này có thể không phù hợp với loại bản vẽ CAD của bạn.")
+        print("   Nên chuyển sang hướng OpenCV (ocr_pdf_pipeline_v2.py) và tinh chỉnh tham số.")
+    else:
+        for (x, y, w, h, score) in boxes[:20]:
+            print(f"  score={score:.3f}  box=({x},{y},{w},{h})")
+        print(f"\nGợi ý: đặt TABLE_DETECT_THRESHOLD thấp hơn điểm nhỏ nhất trong nhóm box")
+        print(f"đúng là bảng thật (xem debug_scores.png để biết box nào đúng).")
+
+    from PIL import ImageDraw
+    img = PILImage.open(image_path).convert("RGB")
+    draw = ImageDraw.Draw(img)
+    for (x, y, w, h, score) in boxes:
+        draw.rectangle([x, y, x + w, y + h], outline=(255, 0, 0), width=3)
+        draw.text((x, max(0, y - 15)), f"{score:.2f}", fill=(255, 0, 0))
+    img.save("debug_scores.png")
+    print("Đã lưu debug_scores.png — mở lên xem khung nào khoanh đúng vùng bảng ứng với điểm bao nhiêu.")
+
+
 def crop_and_upscale(img_pil, box, padding=PADDING, scale=UPSCALE_FACTOR):
     x, y, w, h = box
     iw, ih = img_pil.size
@@ -149,7 +178,16 @@ def process_pdf(pdf_path, processor, model, reader, summary_rows):
 def main():
     if len(sys.argv) < 2:
         print("Cách dùng: python ocr_pdf_pipeline_v3_tabletransformer.py <file.pdf hoặc thư_mục>")
+        print("      hoặc: python ocr_pdf_pipeline_v3_tabletransformer.py --debug-scores <anh.png>")
         sys.exit(1)
+
+    if sys.argv[1] == "--debug-scores":
+        if len(sys.argv) < 3:
+            print("Cần chỉ định ảnh: --debug-scores page.png")
+            sys.exit(1)
+        processor, model = load_table_model()
+        debug_all_scores(sys.argv[2], processor, model)
+        sys.exit(0)
 
     input_path = sys.argv[1]
     os.makedirs(OUTPUT_DIR, exist_ok=True)
