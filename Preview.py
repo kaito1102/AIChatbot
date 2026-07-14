@@ -1,580 +1,253 @@
 """
-smart_pdf_loader.py  —  chiến lược "1 trang = 1 Document"
+Pipeline OCR cho PDF scan CÓ TÁCH BẢNG (table) trước khi OCR
+=============================================================
 
-Thay đổi so với phiên bản cũ
-────────────────────────────
-1. KHÔNG tách chunk theo từng ảnh.
-   Thay vào đó, ảnh được chèn inline dưới dạng [IMAGE: tên_file] đúng vị trí
-   Y trong luồng text → mỗi trang vẫn là 1 Document duy nhất.
+Ý tưởng: bảng trong bản vẽ/tài liệu scan thường có đường kẻ ngang/dọc rõ.
+Script này dò các đường kẻ đó bằng OpenCV để tìm vùng bảng, cắt riêng
+từng vùng bảng ra thành ảnh nhỏ, rồi mới chạy OCR trên từng ảnh đã cắt.
+OCR trên ảnh đã cắt + phóng to sẽ chính xác hơn nhiều so với OCR nguyên
+cả trang (nhiễu nét vẽ kỹ thuật, chữ nhỏ, mật độ cao).
 
-2. Bảng cũng được chèn inline theo vị trí Y, không tạo chunk riêng.
-   Điều này giữ nguyên ngữ cảnh "header table + body text" trên cùng 1 trang.
+Cài đặt (chỉ cần pip):
+    pip install pymupdf easyocr opencv-python-headless numpy
 
-3. Metadata bổ sung:
-   - image_paths  : danh sách tất cả ảnh trên trang (có thể nhiều ảnh)
-   - table_count  : số bảng trên trang
-   - image_count  : số ảnh trên trang
+Cách dùng:
+    python ocr_pdf_pipeline_v2.py input.pdf
+    python ocr_pdf_pipeline_v2.py input_folder/
 
-4. load_directory_smart giữ nguyên interface, chỉ dùng load_pdf_smart mới.
+Kết quả trong output/<ten_file>/:
+    page_001.png              - ảnh cả trang
+    page_001_table_01.png     - từng vùng bảng đã cắt
+    page_001_table_01.txt     - text OCR của riêng vùng bảng đó
+    page_001_nontable.txt     - text OCR phần còn lại của trang (không phải bảng)
+    debug_page_001.png        - ảnh debug: khung đỏ = vùng bảng đã phát hiện
+output/summary.csv            - bảng tổng hợp toàn bộ, có cột "region" (table/nontable)
 """
 
-from __future__ import annotations
-
+import sys
 import os
-import re
-from pathlib import Path
-from typing import List
+import csv
+import cv2
+import numpy as np
+import fitz  # PyMuPDF
+import easyocr
 
-import pdfplumber
-from langchain_core.documents import Document
+# ------------------------------------------------------------------
+# CẤU HÌNH
+# ------------------------------------------------------------------
+DPI = 300
+LANGUAGES = ['en']         # đổi thành ['vi','en'] hoặc ['ja'] tuỳ tài liệu
+OUTPUT_DIR = "output"
+MIN_CONFIDENCE = 0.3
 
-
-# ──────────────────────────────────────────────
-# Internal helpers
-# ──────────────────────────────────────────────
-
-def _safe_name(filename: str) -> str:
-    stem = Path(filename).stem
-    return re.sub(r"[^\w\-]", "_", stem)
-
-
-def _clean_text(text: str) -> str:
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-def _clean_cell_text(text: str) -> str:
-    """Collapse in-cell newlines (multi-line PDF cells) to single space."""
-    if not text:
-        return ""
-    return re.sub(r"\s*\n\s*", " ", text).strip()
+# Tham số dò bảng — chỉnh nếu bảng bị bỏ sót hoặc phát hiện thừa
+MIN_TABLE_AREA_RATIO = 0.01   # vùng bảng phải chiếm ít nhất 1% diện tích trang
+MAX_TABLE_AREA_RATIO = 0.4    # loại bỏ vùng quá lớn (thường là khung viền ngoài của cả trang, không phải bảng)
+LINE_KERNEL_SCALE = 30        # càng lớn -> chỉ bắt đường kẻ càng dài (giảm nhiễu)
+PADDING = 6                   # padding quanh vùng bảng khi cắt (px)
+UPSCALE_FACTOR = 2            # phóng to ảnh bảng trước khi OCR để tăng độ chính xác
 
 
-def _table_to_markdown(page, table_obj) -> str:
+def render_pdf_to_images(pdf_path, out_dir, dpi=DPI):
+    doc = fitz.open(pdf_path)
+    zoom = dpi / 72
+    matrix = fitz.Matrix(zoom, zoom)
+    image_paths = []
+    for i, page in enumerate(doc):
+        pix = page.get_pixmap(matrix=matrix)
+        img_path = os.path.join(out_dir, f"page_{i+1:03d}.png")
+        pix.save(img_path)
+        image_paths.append(img_path)
+    doc.close()
+    return image_paths
+
+
+def detect_table_regions(image_path):
     """
-    Build a clean markdown table from a pdfplumber table object.
-
-    Handles two common PDF table quirks:
-    1. In-cell newlines  — collapsed to space via _clean_cell_text
-    2. Label-value split — PDF sometimes splits "LABEL:" and its value
-       into adjacent rows in the same column (e.g. "PART NO." / "RC7-0183-000").
-       These are merged when the upper cell ends with ":" (label pattern).
-    3. Span detection   — cells whose bottom crosses the next row boundary
-       are treated as spanning; spanned slots are suppressed.
+    Dò các vùng bảng trong ảnh dựa trên đường kẻ ngang/dọc.
+    Trả về danh sách bounding box (x, y, w, h), đã lọc theo diện tích tối thiểu.
     """
-    cells = table_obj.cells
-    if not cells:
-        return ""
+    img = cv2.imread(image_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    col_starts = sorted(set(round(c[0], 1) for c in cells))
-    row_starts = sorted(set(round(c[1], 1) for c in cells))
-    n_cols = len(col_starts)
-    n_rows = len(row_starts)
-
-    # ── Build raw grid ────────────────────────────────────────────────
-    raw: dict[tuple, str] = {}
-    for cell in cells:
-        x0, top, x1, bottom = cell
-        col_idx = col_starts.index(round(x0, 1))
-        row_idx = row_starts.index(round(top, 1))
-        text = _clean_cell_text(page.within_bbox(cell).extract_text() or "")
-        span = sum(1 for r in range(row_idx + 1, n_rows) if row_starts[r] < bottom - 0.5)
-        key = (col_idx, row_idx)
-        raw[key] = (raw.get(key, "") + " " + text).strip() if key in raw else text
-        for r in range(row_idx + 1, row_idx + 1 + span):
-            raw.setdefault((col_idx, r), "__SPAN__")
-
-    grid = [[raw.get((c, r), "") for c in range(n_cols)] for r in range(n_rows)]
-
-    def active_cols(row):
-        return [c for c in range(n_cols) if row[c] and row[c] != "__SPAN__"]
-
-    def should_merge_up(prev, cur) -> bool:
-        """Merge cur into prev only for label-value pattern or empty rows."""
-        cur_active = active_cols(cur)
-        if not cur_active:
-            return True  # empty row → skip
-
-        for c in cur_active:
-            p = prev[c]
-            if not p or p == "__SPAN__":
-                # Prev slot empty — only merge if prev already has other data
-                # (i.e., this isn't just "filling a new independent row")
-                if any(v and v != "__SPAN__" for v in prev):
-                    return False
-            elif p.rstrip().endswith(":"):
-                pass  # label → value pattern, ok to merge
-            else:
-                return False  # prev already has non-label content → new row
-        return True
-
-    # ── Merge rows ────────────────────────────────────────────────────
-    merged: list[list] = [grid[0][:]]
-    for r in range(1, n_rows):
-        cur = grid[r]
-        if not any(v and v != "__SPAN__" for v in cur):
-            continue  # entirely empty/spanned → skip
-        if should_merge_up(merged[-1], cur):
-            for c in range(n_cols):
-                v = cur[c]
-                if v and v != "__SPAN__":
-                    p = merged[-1][c]
-                    merged[-1][c] = ((p + " ") if p and p != "__SPAN__" else "") + v
-        else:
-            merged.append(cur[:])
-
-    # ── Clean up ──────────────────────────────────────────────────────
-    for row in merged:
-        for c in range(n_cols):
-            if row[c] == "__SPAN__":
-                row[c] = ""
-    merged = [r for r in merged if any(v for v in r)]
-    if len(merged) < 2:
-        return ""  # header-only table → not useful
-
-    header, body = merged[0], merged[1:]
-    md  = "| " + " | ".join(header) + " |\n"
-    md += "| " + " | ".join(["---"] * n_cols) + " |\n"
-    for row in body:
-        md += "| " + " | ".join(row) + " |\n"
-    return md.strip()
-
-
-def _is_layout_border(tbl_obj, page_width: float, page_height: float) -> bool:
-    """
-    Phát hiện bảng "giả" — thực ra là đường viền layout bao quanh trang.
-
-    PDF dạng Engineering Report / Attached Sheet thường có một rectangle lớn
-    bao quanh toàn bộ nội dung trang. pdfplumber nhận diện đó là table cells,
-    khiến toàn bộ text bị gom vào 1 markdown table thay vì plain text.
-
-    Heuristic kết hợp 2 điều kiện (cả 2 phải đúng):
-
-    1. Area ratio > 0.5  — bbox chiếm hơn nửa diện tích trang.
-       Bảng dữ liệu thật hiếm khi to hơn 50% trang (trừ bảng header
-       Engineering Report trang 1, nhưng nó vượt được điều kiện #2).
-
-    2. structured_rows < 2 — số hàng có ít nhất 2 ô nonempty < 2.
-       Bảng thật luôn có ít nhất 2 hàng có dữ liệu ở nhiều cột.
-       Layout border bị nhận nhầm thường chỉ có vài ô rải rác.
-
-    Nếu chỉ dùng ratio: bảng header trang 1 (ratio=0.88, struct_rows=3)
-    bị lọc oan. Kết hợp cả 2 điều kiện giải quyết được trường hợp này.
-    """
-    x0, top, x1, bottom = tbl_obj.bbox
-    page_area = page_width * page_height
-    if page_area <= 0:
-        return False
-
-    area_ratio = ((x1 - x0) * (bottom - top)) / page_area
-    if area_ratio <= 0.5:
-        return False  # Bảng nhỏ → chắc chắn không phải layout border
-
-    # Bảng lớn: kiểm tra thêm có "dữ liệu thật" không
-    data = tbl_obj.extract() or []
-    structured_rows = sum(
-        1 for row in data
-        if sum(1 for cell in row if cell and str(cell).strip()) >= 2
+    # Nhị phân hoá đảo màu: nét vẽ/chữ = trắng, nền = đen
+    binary = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 15, 10
     )
-    return structured_rows < 2
+
+    h, w = gray.shape
+    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // LINE_KERNEL_SCALE, 1))
+    vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h // LINE_KERNEL_SCALE))
+
+    horiz_lines = cv2.erode(binary, horiz_kernel, iterations=1)
+    horiz_lines = cv2.dilate(horiz_lines, horiz_kernel, iterations=1)
+
+    vert_lines = cv2.erode(binary, vert_kernel, iterations=1)
+    vert_lines = cv2.dilate(vert_lines, vert_kernel, iterations=1)
+
+    # Kết hợp đường ngang + dọc -> khung bảng
+    table_mask = cv2.add(horiz_lines, vert_lines)
+    table_mask = cv2.dilate(table_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), iterations=1)
+
+    # RETR_TREE để lấy cả các khung lồng bên trong (bảng thật thường nằm trong khung viền
+    # ngoài cùng của cả trang, nên phải nhìn cả contour con, không chỉ contour ngoài cùng)
+    contours, _ = cv2.findContours(table_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    min_area = MIN_TABLE_AREA_RATIO * w * h
+    max_area = MAX_TABLE_AREA_RATIO * w * h
+    boxes = []
+    for cnt in contours:
+        x, y, cw, ch = cv2.boundingRect(cnt)
+        area = cw * ch
+        # loại vùng quá nhỏ (nhiễu) và quá lớn (khung viền ngoài cả trang, không phải bảng)
+        if min_area <= area <= max_area:
+            boxes.append((x, y, cw, ch))
+
+    # Gộp các box chồng lấn/lồng nhau (tránh phát hiện trùng)
+    boxes = merge_overlapping_boxes(boxes)
+    # Sắp theo thứ tự đọc: trên xuống dưới, trái sang phải
+    boxes.sort(key=lambda b: (b[1], b[0]))
+    return boxes, img
 
 
-def _find_header_clip_bottom(page) -> float | None:
-    """
-    Tìm đường kẻ ngang cuối cùng của vùng header (MODEL/TITLE/PART NO…).
-
-    Engineering Report layout luôn có một dải header cố định ở đầu trang,
-    giới hạn bởi các đường kẻ ngang chạy full-width. Hàm này tìm đường kẻ
-    thấp nhất trong khoảng 15–40% chiều cao trang — đó là đáy của header block.
-
-    Trả về tọa độ Y của đường kẻ đó, hoặc None nếu không tìm thấy.
-    """
-    wide_h_lines = sorted(
-        r['top']
-        for r in (page.rects or [])
-        if (r['x1'] - r['x0']) > page.width * 0.5   # rộng hơn 50% trang
-        and (r['bottom'] - r['top']) < 5             # mỏng → là đường kẻ
-    )
-    candidates = [
-        y for y in wide_h_lines
-        if 0.15 * page.height < y < 0.40 * page.height
-    ]
-    return max(candidates) if candidates else None
-
-
-def _table_to_markdown_clipped(page, tbl_obj, clip_bottom: float) -> tuple[str, tuple]:
-    """
-    Build markdown từ tbl_obj nhưng chỉ lấy các cells có top < clip_bottom.
-
-    Dùng khi bảng header bị pdfplumber phình xuống cuối trang (do border dọc).
-    Thay vì crop page rồi re-detect (mất đường kẻ dọc), ta lọc trực tiếp
-    trên cells của tbl_obj — vẫn dùng tọa độ gốc để extract text chính xác.
-
-    Trả về (markdown_string, clipped_bbox).
-    """
-    cells_in = [c for c in tbl_obj.cells if c[1] < clip_bottom - 1]
-    if not cells_in:
-        return "", tbl_obj.bbox
-
-    # Tính bbox của vùng bị giữ lại
-    cx0 = min(c[0] for c in cells_in)
-    ctop = min(c[1] for c in cells_in)
-    cx1 = max(c[2] for c in cells_in)
-    cbot = max(c[3] for c in cells_in)
-    clipped_bbox = (cx0, ctop, cx1, cbot)
-
-    # Build grid từ cells đã lọc
-    col_starts = sorted(set(round(c[0], 1) for c in cells_in))
-    row_starts = sorted(set(round(c[1], 1) for c in cells_in))
-    n_cols = len(col_starts)
-    n_rows = len(row_starts)
-
-    raw: dict[tuple, str] = {}
-    for cell in cells_in:
-        x0c, topc, x1c, botc = cell
-        col_idx = col_starts.index(round(x0c, 1))
-        row_idx = row_starts.index(round(topc, 1))
-        text = _clean_cell_text(page.within_bbox(cell).extract_text() or "")
-        span = sum(1 for r in range(row_idx + 1, n_rows) if row_starts[r] < botc - 0.5)
-        key = (col_idx, row_idx)
-        raw[key] = (raw.get(key, "") + " " + text).strip() if key in raw else text
-        for r in range(row_idx + 1, row_idx + 1 + span):
-            raw.setdefault((col_idx, r), "__SPAN__")
-
-    grid = [[raw.get((c, r), "") for c in range(n_cols)] for r in range(n_rows)]
-
-    # Dọn và render
-    for row in grid:
-        for c in range(n_cols):
-            if row[c] == "__SPAN__":
-                row[c] = ""
-    grid = [r for r in grid if any(v for v in r)]
-    if len(grid) < 2:
-        return "", clipped_bbox
-
-    header, body = grid[0], grid[1:]
-    md  = "| " + " | ".join(header) + " |\n"
-    md += "| " + " | ".join(["---"] * n_cols) + " |\n"
-    for row in body:
-        md += "| " + " | ".join(row) + " |\n"
-    return md.strip(), clipped_bbox
-
-
-def _is_header_table(table: list, page_num: int) -> bool:
-    """
-    Phát hiện bảng header lặp lại (ISSUE NO., MODEL, TITLE …).
-    Nếu trang > 1 và bảng chứa từ khoá đặc trưng của header thì bỏ qua.
-    """
-    if page_num <= 1:
-        return False
-    flat = " ".join(
-        cell for row in table for cell in row if cell
-    ).upper()
-    keywords = {"ISSUE NO", "MODEL", "APPROVED BY", "CHECKED BY", "ISSUED BY",
-                "ENGINEERING REPORT", "ATTACHED SHEET", "IJPE"}
-    hits = sum(1 for kw in keywords if kw in flat)
-    return hits >= 3
-
-
-def _extract_images_with_position(
-    page,
-    filename: str,
-    page_num: int,
-    image_dir: str,
-    min_size: int = 100,
-) -> list[dict]:
-    """Lưu ảnh ra đĩa, trả về list dict với tọa độ Y trung bình để sắp xếp."""
-    saved: list[dict] = []
-    stem = _safe_name(filename)
-
-    for idx, img_obj in enumerate(page.images):
-        try:
-            x0 = img_obj.get("x0", 0)
-            top = img_obj.get("top", 0)
-            x1 = img_obj.get("x1", page.width)
-            bottom = img_obj.get("bottom", page.height)
-
-            if (x1 - x0) < min_size or (bottom - top) < min_size:
+def merge_overlapping_boxes(boxes):
+    if not boxes:
+        return []
+    rects = [[x, y, x + w, y + h] for (x, y, w, h) in boxes]
+    merged = True
+    while merged:
+        merged = False
+        result = []
+        used = [False] * len(rects)
+        for i in range(len(rects)):
+            if used[i]:
                 continue
-
-            cropped = page.within_bbox((x0, top, x1, bottom))
-            pil_img = cropped.to_image(resolution=150).original
-
-            img_name = f"{stem}_p{page_num:03d}_{idx:02d}.png"
-            img_path = os.path.join(image_dir, img_name)
-            pil_img.save(img_path, format="PNG", optimize=True)
-
-            saved.append({
-                "path": img_path,
-                "name": img_name,
-                "y_mid": (top + bottom) / 2,   # dùng để sort inline
-                "top": top,
-                "bottom": bottom,
-                "x0": x0,
-                "x1": x1,
-            })
-        except Exception as e:
-            print(f"⚠️  Cannot extract image idx={idx} page={page_num}: {e}")
-
-    return saved
-
-
-# ──────────────────────────────────────────────
-# Core per-page builder
-# ──────────────────────────────────────────────
-
-def _build_page_document(
-    page,
-    filename: str,
-    total_pages: int,
-    image_dir: str,
-    min_image_size: int,
-    skip_repeated_header: bool,
-) -> Document | None:
-    """
-    Xây dựng 1 Document cho toàn bộ trang bằng cách ghép text + bảng + ảnh
-    theo thứ tự vị trí Y từ trên xuống dưới.
-    """
-    page_num = page.page_number
-
-    # ── 1. Thu thập bảng (với vị trí Y) ──────────────────────────────
-    table_finder = page.find_tables() or []
-
-    tables_with_pos: list[dict] = []
-    # kept_table_bboxes: chỉ gồm các bảng THỰC SỰ được giữ lại.
-    # Dùng để lọc words ở bước 3 — không dùng bbox của layout border
-    # vì nếu dùng thì toàn bộ words trên trang sẽ bị loại nhầm.
-    kept_table_bboxes: list[tuple] = []
-
-    for tbl_obj in table_finder:
-        x0, top, x1, bottom = tbl_obj.bbox
-
-        # ── Lọc layout border giả bảng ────────────────────────────────
-        if _is_layout_border(tbl_obj, page.width, page.height):
-            continue
-
-        # ── Clip bảng header bị phình to ──────────────────────────────
-        # Bảng trang 1 của Engineering Report đôi khi kéo dài xuống tận
-        # cuối trang (bbox ratio > 0.5) vì border dọc của trang bị nhận
-        # nhầm là cạnh bảng. Nội dung thật của header chỉ nằm trong vùng
-        # trên cùng, giới hạn bởi đường kẻ ngang cuối của header block.
-        # → Clip bảng tại đó để markdown chỉ chứa các field header thật.
-        area_ratio = ((x1 - x0) * (bottom - top)) / (page.width * page.height)
-
-        # ── Clip bảng header bị phình to ──────────────────────────────
-        # Bảng header trang 1 đôi khi kéo dài xuống tận cuối trang vì
-        # border dọc của trang bị pdfplumber nhận nhầm là cạnh bảng.
-        # Nội dung thật của header chỉ nằm trong vùng trên cùng, giới
-        # hạn bởi đường kẻ ngang cuối (clip_y). Ta build markdown trực
-        # tiếp từ cells có top < clip_y, không crop page (để giữ đường
-        # kẻ dọc, đảm bảo extract text chính xác).
-        if area_ratio > 0.5:
-            clip_y = _find_header_clip_bottom(page)
-            if clip_y and clip_y < bottom - 10:
-                md, effective_bbox = _table_to_markdown_clipped(page, tbl_obj, clip_y)
-            else:
-                md = _table_to_markdown(page, tbl_obj)
-                effective_bbox = tbl_obj.bbox
-        else:
-            md = _table_to_markdown(page, tbl_obj)
-            effective_bbox = tbl_obj.bbox
-
-        # _is_header_table check dùng raw data từ vùng đã clip
-        if skip_repeated_header:
-            ex0, etop, ex1, ebot = effective_bbox
-            raw_data = [
-                [_clean_cell_text(page.within_bbox(c).extract_text() or "")
-                 for c in [c2 for c2 in tbl_obj.cells if round(c2[1],1) == round(r_top,1)]]
-                for r_top in sorted(set(round(c[1],1) for c in tbl_obj.cells if c[1] < ebot))
-            ]
-            if _is_header_table(raw_data, page_num):
-                continue
-
-        if md:
-            ex0, etop, ex1, ebot = effective_bbox
-            kept_table_bboxes.append(effective_bbox)
-            tables_with_pos.append({
-                "markdown": md,
-                "y_mid": (etop + ebot) / 2,
-                "top": etop,
-            })
-
-    # ── 2. Thu thập ảnh ───────────────────────────────────────────────
-    images = _extract_images_with_position(
-        page, filename, page_num, image_dir, min_size=min_image_size
-    )
-
-    # ── 3. Trích text ngoài vùng bảng ────────────────────────────────
-    def _in_any_table(w) -> bool:
-        for x0t, topt, x1t, bottomt in kept_table_bboxes:
-            if w["x0"] < x1t and w["x1"] > x0t and w["top"] < bottomt and w["bottom"] > topt:
-                return True
-        return False
-
-    words = page.extract_words(x_tolerance=3, y_tolerance=3) or []
-    non_table_words = [w for w in words if not _in_any_table(w)]
-
-    # Nhóm words thành dòng, giữ tọa độ Y để sort sau
-    line_map: dict[int, list[str]] = {}
-    for w in non_table_words:
-        key = round(w["top"])
-        line_map.setdefault(key, []).append(w["text"])
-
-    text_lines: list[dict] = [
-        {"text": " ".join(tokens), "y_mid": y, "type": "text"}
-        for y, tokens in sorted(line_map.items())
-    ]
-
-    # ── 4. Gộp tất cả phần tử theo thứ tự Y ─────────────────────────
-    elements: list[dict] = []
-
-    for item in text_lines:
-        elements.append({"y": item["y_mid"], "kind": "text", "content": item["text"]})
-
-    for tbl in tables_with_pos:
-        elements.append({"y": tbl["y_mid"], "kind": "table", "content": tbl["markdown"]})
-
-    for img in images:
-        label = f"[IMAGE: {img['name']}]"
-        elements.append({"y": img["y_mid"], "kind": "image", "content": label})
-
-    elements.sort(key=lambda e: e["y"])
-
-    # ── 5. Render thành chuỗi văn bản ────────────────────────────────
-    parts: list[str] = []
-    prev_kind = None
-    for el in elements:
-        content = el["content"].strip()
-        if not content:
-            continue
-        # Thêm dòng trống giữa text và bảng/ảnh để dễ đọc
-        if prev_kind and el["kind"] != prev_kind:
-            parts.append("")
-        parts.append(content)
-        prev_kind = el["kind"]
-
-    page_content = _clean_text("\n".join(parts))
-    if not page_content:
-        return None
-
-    return Document(
-        page_content=page_content,
-        metadata={
-            "source": str(Path(filename).resolve()) if os.path.exists(filename) else filename,
-            "filename": os.path.basename(filename),
-            "page": page_num,
-            "total_pages": total_pages,
-            "has_table": bool(tables_with_pos),
-            "has_image": bool(images),
-            "table_count": len(tables_with_pos),
-            "image_count": len(images),
-            # Danh sách path (dùng cho RAG retrieve)
-            "image_paths": [img["path"] for img in images],
-            # Tọa độ từng ảnh (dùng cho preview / debug)
-            # Format: [{"path":..., "name":..., "x0":..., "x1":..., "top":..., "bottom":...}, ...]
-            "images_meta": [
-                {
-                    "path":   img["path"],
-                    "name":   img["name"],
-                    "x0":     img["x0"],
-                    "x1":     img["x1"],
-                    "top":    img["top"],
-                    "bottom": img["bottom"],
-                }
-                for img in images
-            ],
-        },
-    )
-
-
-# ──────────────────────────────────────────────
-# Public API
-# ──────────────────────────────────────────────
-
-def load_pdf_smart(
-    pdf_path: str,
-    chunk_by: str = "page",               # giữ param để tương thích
-    table_format: str = "markdown",
-    image_dir: str = "extracted_images",
-    min_image_size: int = 100,
-    include_page_images: bool = True,      # giữ param để tương thích
-    skip_repeated_header: bool = True,     # NEW: bỏ qua bảng header lặp
-) -> List[Document]:
-    """
-    Load PDF, trả về list Document (1 doc / trang).
-
-    Thay đổi chính so với phiên bản cũ
-    ─────────────────────────────────────
-    • Mỗi trang = 1 Document duy nhất (không tách theo ảnh hay bảng).
-    • Text, bảng, ảnh được sắp xếp inline theo tọa độ Y.
-    • Bảng header lặp lại (trang ≥ 2) được lọc nếu skip_repeated_header=True.
-    • Metadata bổ sung: table_count, image_count (thay vì chỉ has_table/has_image).
-    """
-    pdf_path = str(pdf_path)
-    filename = os.path.basename(pdf_path)
-    os.makedirs(image_dir, exist_ok=True)
-    docs: List[Document] = []
-
-    with pdfplumber.open(pdf_path) as pdf:
-        total_pages = len(pdf.pages)
-        for page in pdf.pages:
-            doc = _build_page_document(
-                page=page,
-                filename=pdf_path,
-                total_pages=total_pages,
-                image_dir=image_dir,
-                min_image_size=min_image_size,
-                skip_repeated_header=skip_repeated_header,
-            )
-            if doc:
-                docs.append(doc)
-
-    return docs
-
-
-def load_directory_smart(
-    data_dir: str,
-    pdf_kwargs: dict | None = None,
-) -> List[Document]:
-    """Duyệt thư mục, load PDF / TXT / MD / DOCX."""
-    from langchain_community.document_loaders import TextLoader
-
-    pdf_kwargs = pdf_kwargs or {}
-    all_docs: List[Document] = []
-    data_path = Path(data_dir)
-
-    for fpath in sorted(data_path.rglob("*")):
-        if not fpath.is_file():
-            continue
-
-        suffix = fpath.suffix.lower()
-
-        try:
-            if suffix == ".pdf":
-                docs = load_pdf_smart(str(fpath), **pdf_kwargs)
-                print(f"📄 {fpath.name}: {len(docs)} pages loaded")
-
-            elif suffix in (".txt", ".md"):
-                loader = TextLoader(str(fpath), encoding="utf-8")
-                docs = loader.load()
-                print(f"📝 {fpath.name}: {len(docs)} docs loaded")
-
-            elif suffix == ".docx":
-                try:
-                    from langchain_community.document_loaders import Docx2txtLoader
-                    loader = Docx2txtLoader(str(fpath))
-                    docs = loader.load()
-                    print(f"📝 {fpath.name}: {len(docs)} docs loaded")
-                except ImportError:
-                    print(f"⚠️  Skipped {fpath.name} (pip install docx2txt)")
+            x1, y1, x2, y2 = rects[i]
+            for j in range(i + 1, len(rects)):
+                if used[j]:
                     continue
+                a1, b1, a2, b2 = rects[j]
+                # overlap check
+                if x1 < a2 and a1 < x2 and y1 < b2 and b1 < y2:
+                    x1, y1, x2, y2 = min(x1, a1), min(y1, b1), max(x2, a2), max(y2, b2)
+                    used[j] = True
+                    merged = True
+            result.append([x1, y1, x2, y2])
+            used[i] = True
+        rects = result
+    return [(x1, y1, x2 - x1, y2 - y1) for x1, y1, x2, y2 in rects]
 
-            else:
-                continue
 
-            all_docs.extend(docs)
+def crop_and_upscale(img, box, padding=PADDING, scale=UPSCALE_FACTOR):
+    x, y, w, h = box
+    ih, iw = img.shape[:2]
+    x0, y0 = max(0, x - padding), max(0, y - padding)
+    x1, y1 = min(iw, x + w + padding), min(ih, y + h + padding)
+    crop = img[y0:y1, x0:x1]
+    if scale != 1:
+        crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    return crop
 
-        except Exception as e:
-            print(f"❌ Failed to load {fpath.name}: {e}")
 
-    return all_docs
+def mask_out_boxes(img, boxes):
+    """Trả về bản sao ảnh với các vùng bảng đã bị che trắng (để OCR riêng phần còn lại)."""
+    out = img.copy()
+    for (x, y, w, h) in boxes:
+        cv2.rectangle(out, (x, y), (x + w, y + h), (255, 255, 255), -1)
+    return out
+
+
+def ocr_array(reader, image_array, min_confidence=MIN_CONFIDENCE):
+    results = reader.readtext(image_array, detail=1)
+    return [(text, conf) for (bbox, text, conf) in results if conf >= min_confidence]
+
+
+def process_pdf(pdf_path, reader, summary_rows):
+    base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    page_dir = os.path.join(OUTPUT_DIR, base_name)
+    os.makedirs(page_dir, exist_ok=True)
+
+    print(f"[1/4] Render PDF -> ảnh: {pdf_path}")
+    image_paths = render_pdf_to_images(pdf_path, page_dir)
+
+    for idx, img_path in enumerate(image_paths, start=1):
+        print(f"[2/4] Dò vùng bảng trang {idx}: {img_path}")
+        boxes, img = detect_table_regions(img_path)
+        print(f"       -> tìm thấy {len(boxes)} vùng bảng")
+
+        # Ảnh debug: vẽ khung đỏ quanh vùng bảng phát hiện được
+        debug_img = img.copy()
+        for (x, y, w, h) in boxes:
+            cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 0, 255), 3)
+        cv2.imwrite(os.path.join(page_dir, f"debug_page_{idx:03d}.png"), debug_img)
+
+        # OCR riêng từng vùng bảng
+        for t_idx, box in enumerate(boxes, start=1):
+            crop = crop_and_upscale(img, box)
+            crop_path = os.path.join(page_dir, f"page_{idx:03d}_table_{t_idx:02d}.png")
+            cv2.imwrite(crop_path, crop)
+
+            print(f"[3/4] OCR bảng {t_idx}/{len(boxes)} (trang {idx})")
+            lines = ocr_array(reader, crop)
+            table_text = "\n".join(text for text, conf in lines)
+            with open(crop_path.replace(".png", ".txt"), "w", encoding="utf-8") as f:
+                f.write(table_text)
+
+            for text, conf in lines:
+                summary_rows.append({
+                    "file": base_name, "page": idx, "region": f"table_{t_idx}",
+                    "text": text, "confidence": round(conf, 3),
+                })
+
+        # OCR phần còn lại của trang (đã che các vùng bảng để tránh trùng lặp)
+        remainder = mask_out_boxes(img, boxes)
+        print(f"[4/4] OCR phần ngoài bảng (trang {idx})")
+        lines = ocr_array(reader, remainder)
+        nontable_text = "\n".join(text for text, conf in lines)
+        with open(os.path.join(page_dir, f"page_{idx:03d}_nontable.txt"), "w", encoding="utf-8") as f:
+            f.write(nontable_text)
+
+        for text, conf in lines:
+            summary_rows.append({
+                "file": base_name, "page": idx, "region": "nontable",
+                "text": text, "confidence": round(conf, 3),
+            })
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Cách dùng: python ocr_pdf_pipeline_v2.py <file.pdf hoặc thư_mục>")
+        sys.exit(1)
+
+    input_path = sys.argv[1]
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    if os.path.isdir(input_path):
+        pdf_files = [os.path.join(input_path, f) for f in os.listdir(input_path)
+                     if f.lower().endswith(".pdf")]
+    else:
+        pdf_files = [input_path]
+
+    if not pdf_files:
+        print("Không tìm thấy file PDF nào.")
+        sys.exit(1)
+
+    print(f"Khởi tạo EasyOCR reader (ngôn ngữ: {LANGUAGES})...")
+    reader = easyocr.Reader(LANGUAGES)
+
+    summary_rows = []
+    for pdf_path in pdf_files:
+        process_pdf(pdf_path, reader, summary_rows)
+
+    summary_path = os.path.join(OUTPUT_DIR, "summary.csv")
+    with open(summary_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=["file", "page", "region", "text", "confidence"])
+        writer.writeheader()
+        writer.writerows(summary_rows)
+
+    print(f"\nHoàn tất. Xem: {summary_path}")
+    print("Kiểm tra file debug_page_XXX.png để xác nhận vùng bảng có được dò đúng không.")
+
+
+if __name__ == "__main__":
+    main()
