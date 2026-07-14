@@ -1,51 +1,56 @@
 """
-Pipeline OCR cho PDF scan CÓ TÁCH BẢNG (table) trước khi OCR
-=============================================================
+Dò bảng bằng Table Transformer (deep learning) + OCR bằng EasyOCR
+===================================================================
 
-Ý tưởng: bảng trong bản vẽ/tài liệu scan thường có đường kẻ ngang/dọc rõ.
-Script này dò các đường kẻ đó bằng OpenCV để tìm vùng bảng, cắt riêng
-từng vùng bảng ra thành ảnh nhỏ, rồi mới chạy OCR trên từng ảnh đã cắt.
-OCR trên ảnh đã cắt + phóng to sẽ chính xác hơn nhiều so với OCR nguyên
-cả trang (nhiễu nét vẽ kỹ thuật, chữ nhỏ, mật độ cao).
+KHÁC BIỆT so với bản dùng OpenCV (ocr_pdf_pipeline_v2.py):
+  - OpenCV: dò bảng dựa vào đường kẻ ngang/dọc -> dễ nhầm với đường kích thước,
+    và bỏ sót bảng nếu đường kẻ mờ/đứt quãng.
+  - Table Transformer: model AI học đặc trưng THỊ GIÁC của bảng (bố cục, mật độ
+    chữ, khoảng cách...) từ hàng triệu bảng thật -> tổng quát hoá tốt hơn nhiều
+    cho tài liệu có cấu trúc KHÔNG cố định, kể cả bảng không có đường viền.
 
-Cài đặt (chỉ cần pip):
-    pip install pymupdf easyocr opencv-python-headless numpy
+  Đánh đổi: cần tải model (~115MB, 1 lần duy nhất) từ huggingface.co, và chạy
+  chậm hơn OpenCV (vài giây/trang thay vì mili-giây).
+
+Cài đặt:
+    pip install transformers torch pillow timm pymupdf easyocr
+
+Lưu ý về mạng công ty:
+    Model tải từ huggingface.co (khác domain với GitHub bạn từng bị chặn trước
+    đây). Nếu IT chặn cả huggingface.co, cách này sẽ không chạy được — khi đó
+    quay lại dùng ocr_pdf_pipeline_v2.py (chế độ "auto") và tự kiểm tra bằng
+    debug_page_XXX.png, chỉnh tham số MIN_TABLE_AREA_RATIO/LINE_KERNEL_SCALE
+    theo từng loại file.
 
 Cách dùng:
-    python ocr_pdf_pipeline_v2.py input.pdf
-    python ocr_pdf_pipeline_v2.py input_folder/
-
-Kết quả trong output/<ten_file>/:
-    page_001.png              - ảnh cả trang
-    page_001_table_01.png     - từng vùng bảng đã cắt
-    page_001_table_01.txt     - text OCR của riêng vùng bảng đó
-    page_001_nontable.txt     - text OCR phần còn lại của trang (không phải bảng)
-    debug_page_001.png        - ảnh debug: khung đỏ = vùng bảng đã phát hiện
-output/summary.csv            - bảng tổng hợp toàn bộ, có cột "region" (table/nontable)
+    python ocr_pdf_pipeline_v3_tabletransformer.py input.pdf
+    python ocr_pdf_pipeline_v3_tabletransformer.py input_folder/
 """
 
 import sys
 import os
 import csv
-import cv2
-import numpy as np
 import fitz  # PyMuPDF
+import torch
+from PIL import Image as PILImage
+from transformers import AutoImageProcessor, TableTransformerForObjectDetection
 import easyocr
 
-# ------------------------------------------------------------------
-# CẤU HÌNH
-# ------------------------------------------------------------------
 DPI = 300
-LANGUAGES = ['en']         # đổi thành ['vi','en'] hoặc ['ja'] tuỳ tài liệu
+LANGUAGES = ['en']          # đổi thành ['vi','en'] hoặc ['ja'] tuỳ tài liệu
 OUTPUT_DIR = "output"
-MIN_CONFIDENCE = 0.3
+MIN_CONFIDENCE = 0.3        # ngưỡng tin cậy OCR (easyocr)
+TABLE_DETECT_THRESHOLD = 0.7  # ngưỡng tin cậy phát hiện bảng (Table Transformer) — tăng nếu bị lẫn vùng không phải bảng
+PADDING = 10
+UPSCALE_FACTOR = 2
 
-# Tham số dò bảng — chỉnh nếu bảng bị bỏ sót hoặc phát hiện thừa
-MIN_TABLE_AREA_RATIO = 0.01   # vùng bảng phải chiếm ít nhất 1% diện tích trang
-MAX_TABLE_AREA_RATIO = 0.4    # loại bỏ vùng quá lớn (thường là khung viền ngoài của cả trang, không phải bảng)
-LINE_KERNEL_SCALE = 30        # càng lớn -> chỉ bắt đường kẻ càng dài (giảm nhiễu)
-PADDING = 6                   # padding quanh vùng bảng khi cắt (px)
-UPSCALE_FACTOR = 2            # phóng to ảnh bảng trước khi OCR để tăng độ chính xác
+
+def load_table_model():
+    print("Tải model Table Transformer (lần đầu sẽ mất vài phút để tải ~115MB)...")
+    processor = AutoImageProcessor.from_pretrained("microsoft/table-transformer-detection")
+    model = TableTransformerForObjectDetection.from_pretrained("microsoft/table-transformer-detection")
+    model.eval()
+    return processor, model
 
 
 def render_pdf_to_images(pdf_path, out_dir, dpi=DPI):
@@ -62,133 +67,74 @@ def render_pdf_to_images(pdf_path, out_dir, dpi=DPI):
     return image_paths
 
 
-def detect_table_regions(image_path):
-    """
-    Dò các vùng bảng trong ảnh dựa trên đường kẻ ngang/dọc.
-    Trả về danh sách bounding box (x, y, w, h), đã lọc theo diện tích tối thiểu.
-    """
-    img = cv2.imread(image_path)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+def detect_tables_dl(image_path, processor, model, threshold=TABLE_DETECT_THRESHOLD):
+    """Dò bảng bằng Table Transformer. Trả về danh sách box (x, y, w, h)."""
+    image = PILImage.open(image_path).convert("RGB")
+    inputs = processor(images=image, return_tensors="pt")
+    with torch.no_grad():
+        outputs = model(**inputs)
 
-    # Nhị phân hoá đảo màu: nét vẽ/chữ = trắng, nền = đen
-    binary = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 15, 10
-    )
+    target_sizes = torch.tensor([image.size[::-1]])
+    results = processor.post_process_object_detection(
+        outputs, threshold=threshold, target_sizes=target_sizes
+    )[0]
 
-    h, w = gray.shape
-    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // LINE_KERNEL_SCALE, 1))
-    vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h // LINE_KERNEL_SCALE))
-
-    horiz_lines = cv2.erode(binary, horiz_kernel, iterations=1)
-    horiz_lines = cv2.dilate(horiz_lines, horiz_kernel, iterations=1)
-
-    vert_lines = cv2.erode(binary, vert_kernel, iterations=1)
-    vert_lines = cv2.dilate(vert_lines, vert_kernel, iterations=1)
-
-    # Kết hợp đường ngang + dọc -> khung bảng
-    table_mask = cv2.add(horiz_lines, vert_lines)
-    table_mask = cv2.dilate(table_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), iterations=1)
-
-    # RETR_TREE để lấy cả các khung lồng bên trong (bảng thật thường nằm trong khung viền
-    # ngoài cùng của cả trang, nên phải nhìn cả contour con, không chỉ contour ngoài cùng)
-    contours, _ = cv2.findContours(table_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-    min_area = MIN_TABLE_AREA_RATIO * w * h
-    max_area = MAX_TABLE_AREA_RATIO * w * h
     boxes = []
-    for cnt in contours:
-        x, y, cw, ch = cv2.boundingRect(cnt)
-        area = cw * ch
-        # loại vùng quá nhỏ (nhiễu) và quá lớn (khung viền ngoài cả trang, không phải bảng)
-        if min_area <= area <= max_area:
-            boxes.append((x, y, cw, ch))
-
-    # Gộp các box chồng lấn/lồng nhau (tránh phát hiện trùng)
-    boxes = merge_overlapping_boxes(boxes)
-    # Sắp theo thứ tự đọc: trên xuống dưới, trái sang phải
-    boxes.sort(key=lambda b: (b[1], b[0]))
-    return boxes, img
+    for score, box in zip(results["scores"], results["boxes"]):
+        x1, y1, x2, y2 = [int(v) for v in box.tolist()]
+        boxes.append((x1, y1, x2 - x1, y2 - y1, float(score)))
+    return boxes
 
 
-def merge_overlapping_boxes(boxes):
-    if not boxes:
-        return []
-    rects = [[x, y, x + w, y + h] for (x, y, w, h) in boxes]
-    merged = True
-    while merged:
-        merged = False
-        result = []
-        used = [False] * len(rects)
-        for i in range(len(rects)):
-            if used[i]:
-                continue
-            x1, y1, x2, y2 = rects[i]
-            for j in range(i + 1, len(rects)):
-                if used[j]:
-                    continue
-                a1, b1, a2, b2 = rects[j]
-                # overlap check
-                if x1 < a2 and a1 < x2 and y1 < b2 and b1 < y2:
-                    x1, y1, x2, y2 = min(x1, a1), min(y1, b1), max(x2, a2), max(y2, b2)
-                    used[j] = True
-                    merged = True
-            result.append([x1, y1, x2, y2])
-            used[i] = True
-        rects = result
-    return [(x1, y1, x2 - x1, y2 - y1) for x1, y1, x2, y2 in rects]
-
-
-def crop_and_upscale(img, box, padding=PADDING, scale=UPSCALE_FACTOR):
+def crop_and_upscale(img_pil, box, padding=PADDING, scale=UPSCALE_FACTOR):
     x, y, w, h = box
-    ih, iw = img.shape[:2]
+    iw, ih = img_pil.size
     x0, y0 = max(0, x - padding), max(0, y - padding)
     x1, y1 = min(iw, x + w + padding), min(ih, y + h + padding)
-    crop = img[y0:y1, x0:x1]
+    crop = img_pil.crop((x0, y0, x1, y1))
     if scale != 1:
-        crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        crop = crop.resize((crop.width * scale, crop.height * scale), PILImage.LANCZOS)
     return crop
 
 
-def mask_out_boxes(img, boxes):
-    """Trả về bản sao ảnh với các vùng bảng đã bị che trắng (để OCR riêng phần còn lại)."""
-    out = img.copy()
-    for (x, y, w, h) in boxes:
-        cv2.rectangle(out, (x, y), (x + w, y + h), (255, 255, 255), -1)
-    return out
-
-
-def ocr_array(reader, image_array, min_confidence=MIN_CONFIDENCE):
-    results = reader.readtext(image_array, detail=1)
+def ocr_pil_image(reader, pil_img, min_confidence=MIN_CONFIDENCE):
+    import numpy as np
+    arr = np.array(pil_img)
+    results = reader.readtext(arr, detail=1)
     return [(text, conf) for (bbox, text, conf) in results if conf >= min_confidence]
 
 
-def process_pdf(pdf_path, reader, summary_rows):
+def process_pdf(pdf_path, processor, model, reader, summary_rows):
     base_name = os.path.splitext(os.path.basename(pdf_path))[0]
     page_dir = os.path.join(OUTPUT_DIR, base_name)
     os.makedirs(page_dir, exist_ok=True)
 
-    print(f"[1/4] Render PDF -> ảnh: {pdf_path}")
+    print(f"[1/3] Render PDF -> ảnh: {pdf_path}")
     image_paths = render_pdf_to_images(pdf_path, page_dir)
 
     for idx, img_path in enumerate(image_paths, start=1):
-        print(f"[2/4] Dò vùng bảng trang {idx}: {img_path}")
-        boxes, img = detect_table_regions(img_path)
+        print(f"[2/3] Dò bảng (Table Transformer) trang {idx}")
+        boxes = detect_tables_dl(img_path, processor, model)
         print(f"       -> tìm thấy {len(boxes)} vùng bảng")
 
-        # Ảnh debug: vẽ khung đỏ quanh vùng bảng phát hiện được
-        debug_img = img.copy()
-        for (x, y, w, h) in boxes:
-            cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 0, 255), 3)
-        cv2.imwrite(os.path.join(page_dir, f"debug_page_{idx:03d}.png"), debug_img)
+        img_pil = PILImage.open(img_path).convert("RGB")
 
-        # OCR riêng từng vùng bảng
-        for t_idx, box in enumerate(boxes, start=1):
-            crop = crop_and_upscale(img, box)
+        # ảnh debug
+        from PIL import ImageDraw
+        debug_img = img_pil.copy()
+        draw = ImageDraw.Draw(debug_img)
+        for (x, y, w, h, score) in boxes:
+            draw.rectangle([x, y, x + w, y + h], outline=(255, 0, 0), width=4)
+            draw.text((x, max(0, y - 20)), f"{score:.2f}", fill=(255, 0, 0))
+        debug_img.save(os.path.join(page_dir, f"debug_page_{idx:03d}.png"))
+
+        for t_idx, (x, y, w, h, score) in enumerate(boxes, start=1):
+            crop = crop_and_upscale(img_pil, (x, y, w, h))
             crop_path = os.path.join(page_dir, f"page_{idx:03d}_table_{t_idx:02d}.png")
-            cv2.imwrite(crop_path, crop)
+            crop.save(crop_path)
 
-            print(f"[3/4] OCR bảng {t_idx}/{len(boxes)} (trang {idx})")
-            lines = ocr_array(reader, crop)
+            print(f"[3/3] OCR bảng {t_idx}/{len(boxes)} (trang {idx}, độ tin cậy dò bảng={score:.2f})")
+            lines = ocr_pil_image(reader, crop)
             table_text = "\n".join(text for text, conf in lines)
             with open(crop_path.replace(".png", ".txt"), "w", encoding="utf-8") as f:
                 f.write(table_text)
@@ -196,27 +142,13 @@ def process_pdf(pdf_path, reader, summary_rows):
             for text, conf in lines:
                 summary_rows.append({
                     "file": base_name, "page": idx, "region": f"table_{t_idx}",
-                    "text": text, "confidence": round(conf, 3),
+                    "detect_score": round(score, 3), "text": text, "confidence": round(conf, 3),
                 })
-
-        # OCR phần còn lại của trang (đã che các vùng bảng để tránh trùng lặp)
-        remainder = mask_out_boxes(img, boxes)
-        print(f"[4/4] OCR phần ngoài bảng (trang {idx})")
-        lines = ocr_array(reader, remainder)
-        nontable_text = "\n".join(text for text, conf in lines)
-        with open(os.path.join(page_dir, f"page_{idx:03d}_nontable.txt"), "w", encoding="utf-8") as f:
-            f.write(nontable_text)
-
-        for text, conf in lines:
-            summary_rows.append({
-                "file": base_name, "page": idx, "region": "nontable",
-                "text": text, "confidence": round(conf, 3),
-            })
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Cách dùng: python ocr_pdf_pipeline_v2.py <file.pdf hoặc thư_mục>")
+        print("Cách dùng: python ocr_pdf_pipeline_v3_tabletransformer.py <file.pdf hoặc thư_mục>")
         sys.exit(1)
 
     input_path = sys.argv[1]
@@ -232,21 +164,24 @@ def main():
         print("Không tìm thấy file PDF nào.")
         sys.exit(1)
 
+    processor, model = load_table_model()
+
     print(f"Khởi tạo EasyOCR reader (ngôn ngữ: {LANGUAGES})...")
     reader = easyocr.Reader(LANGUAGES)
 
     summary_rows = []
     for pdf_path in pdf_files:
-        process_pdf(pdf_path, reader, summary_rows)
+        process_pdf(pdf_path, processor, model, reader, summary_rows)
 
     summary_path = os.path.join(OUTPUT_DIR, "summary.csv")
     with open(summary_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=["file", "page", "region", "text", "confidence"])
+        writer = csv.DictWriter(f, fieldnames=["file", "page", "region", "detect_score", "text", "confidence"])
         writer.writeheader()
         writer.writerows(summary_rows)
 
     print(f"\nHoàn tất. Xem: {summary_path}")
-    print("Kiểm tra file debug_page_XXX.png để xác nhận vùng bảng có được dò đúng không.")
+    print("QUAN TRỌNG: kiểm tra debug_page_XXX.png trước — nếu TABLE_DETECT_THRESHOLD")
+    print("quá thấp sẽ lẫn vùng không phải bảng; quá cao sẽ bỏ sót bảng thật.")
 
 
 if __name__ == "__main__":
