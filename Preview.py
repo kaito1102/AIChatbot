@@ -1,41 +1,27 @@
 """
-Pipeline OCR cho PDF scan - v3: chọn bảng theo NEO TỪ KHOÁ (anchor) thay vì
-chỉ dựa đường kẻ hình học.
-=============================================================================
-TẠI SAO ĐỔI CÁCH TIẾP CẬN (đã kiểm chứng trên file mẫu QC1-6046-000D201001.pdf):
+Pipeline OCR cho PDF scan CÓ TÁCH BẢNG (table) trước khi OCR
+=============================================================
 
-Trong mẫu bản vẽ Canon này, 2 vấn đề khiến "auto" hình học thuần tuý không
-thể tách đúng 3/6 bảng mong muốn dù chỉnh tham số thế nào:
+Ý tưởng: bảng trong bản vẽ/tài liệu scan thường có đường kẻ ngang/dọc rõ.
+Script này dò các đường kẻ đó bằng OpenCV để tìm vùng bảng, cắt riêng
+từng vùng bảng ra thành ảnh nhỏ, rồi mới chạy OCR trên từng ảnh đã cắt.
+OCR trên ảnh đã cắt + phóng to sẽ chính xác hơn nhiều so với OCR nguyên
+cả trang (nhiễu nét vẽ kỹ thuật, chữ nhỏ, mật độ cao).
 
-1. Bảng "COMPRESSION SPG" và "COIL END SHAPE" được vẽ chung 1 khung viền
-   NGOÀI DUY NHẤT trong file gốc (không phải do merge code sai) -> OpenCV
-   luôn thấy đây là 1 contour. Phải cắt bằng đường kẻ dọc nội bộ.
-2. Thử rule "đường kẻ dọc dài gần 100% chiều cao box = ranh giới 2 bảng
-   khác nhau": đúng cho case (1) (đường chia tại frac=1.0, cột nội bộ của
-   bảng SPG chỉ đạt frac~0.77) NHƯNG SAI cho khối "MTRL INDIC" + "REVISION
-   NOTE": cột nhãn/giá trị NỘI BỘ của MTRL INDIC cũng đạt frac=1.0 y hệt
-   ranh giới thật -> không có ngưỡng hình học nào tách đúng cả 2 case.
-
-=> Kết luận: đây là vấn đề NGỮ NGHĨA (nội dung chữ), không giải quyết được
-   chỉ bằng hình học. Giải pháp: dùng OCR để neo (anchor) từng bảng theo
-   từ khoá tiêu đề của nó, rồi mới dùng đường kẻ để xác định biên chính xác.
-   Cách này cũng chính là thứ bạn cần khi vị trí bảng xê dịch giữa các file
-   khác nhau (từ khoá không đổi vị trí bảng có thể đổi).
-
-Cài đặt (giống bản cũ, chỉ cần pip):
+Cài đặt (chỉ cần pip):
     pip install pymupdf easyocr opencv-python-headless numpy
 
 Cách dùng:
-    python ocr_pdf_pipeline_v3.py input.pdf
-    python ocr_pdf_pipeline_v3.py input_folder/
+    python ocr_pdf_pipeline_v2.py input.pdf
+    python ocr_pdf_pipeline_v2.py input_folder/
 
 Kết quả trong output/<ten_file>/:
-    page_001.png                  - ảnh cả trang
-    page_001_<table_name>.png     - từng bảng đã cắt (đặt tên theo TABLE_KEYWORDS)
-    page_001_<table_name>.txt     - text OCR của riêng bảng đó
-    page_001_nontable.txt         - text OCR phần còn lại
-    debug_page_001.png            - khung đỏ = bảng đã chọn, khung xanh = box ứng viên bị loại
-output/summary.csv                - bảng tổng hợp toàn bộ
+    page_001.png              - ảnh cả trang
+    page_001_table_01.png     - từng vùng bảng đã cắt
+    page_001_table_01.txt     - text OCR của riêng vùng bảng đó
+    page_001_nontable.txt     - text OCR phần còn lại của trang (không phải bảng)
+    debug_page_001.png        - ảnh debug: khung đỏ = vùng bảng đã phát hiện
+output/summary.csv            - bảng tổng hợp toàn bộ, có cột "region" (table/nontable)
 """
 
 import sys
@@ -50,40 +36,55 @@ import easyocr
 # CẤU HÌNH
 # ------------------------------------------------------------------
 DPI = 300
-LANGUAGES = ['en']
+LANGUAGES = ['en']         # đổi thành ['vi','en'] hoặc ['ja'] tuỳ tài liệu
 OUTPUT_DIR = "output"
 MIN_CONFIDENCE = 0.3
 
-MIN_TABLE_AREA_RATIO = 0.005
-MAX_TABLE_AREA_RATIO = 0.4
-LINE_KERNEL_SCALE = 40
-MIN_GRID_LINES = 2
-PADDING = 6
-UPSCALE_FACTOR = 2
-MERGE_GAP_RATIO = 0.02
+# Tham số dò bảng — chỉnh nếu bảng bị bỏ sót hoặc phát hiện thừa
+MIN_TABLE_AREA_RATIO = 0.005   # vùng bảng phải chiếm ít nhất 0.5% diện tích trang (giảm để bắt bảng nhỏ)
+MAX_TABLE_AREA_RATIO = 0.4     # loại bỏ vùng quá lớn (thường là khung viền ngoài của cả trang, không phải bảng)
+LINE_KERNEL_SCALE = 40         # càng lớn -> kernel càng nhỏ -> bắt được đường kẻ ngắn hơn (bảng nhỏ)
+MIN_GRID_LINES = 2              # số đường kẻ ngang/dọc tối thiểu để coi là "bảng" (loại đường kích thước/mũi tên)
+PADDING = 6                     # padding quanh vùng bảng khi cắt (px)
+UPSCALE_FACTOR = 2              # phóng to ảnh bảng trước khi OCR để tăng độ chính xác
+MERGE_GAP_RATIO = 0.02          # gộp các bảng cách nhau trong khoảng này (tỉ lệ % chiều rộng trang)
+                                 # -> ví dụ nhiều hàng title-block đứng sát nhau sẽ gộp thành 1 vùng crop
+                                 # tăng giá trị này nếu vẫn còn bảng liền kề bị cắt riêng lẻ
 
 # ------------------------------------------------------------------
-# ĐỊNH NGHĨA 3 BẢNG CẦN LẤY — chỉnh từ khoá nếu đổi mẫu bản vẽ.
-# "include": box ứng viên PHẢI chứa ít nhất 1 từ khớp 1 trong các keyword này.
-# "exclude": nếu box ứng viên khớp include NHƯNG cũng chứa điểm khớp exclude
-#            (trường hợp bị gộp nhầm với bảng lân cận), sẽ cắt bớt theo cạnh
-#            gần điểm exclude nhất thay vì loại bỏ cả box.
-# Khớp theo kiểu "substring, không phân biệt hoa/thường" trên text OCR.
+# CHẾ ĐỘ CẮT BẢNG — chọn 1 trong 2
 # ------------------------------------------------------------------
-TABLE_KEYWORDS = {
-    "spec_table": {
-        "include": ["compression", "spg", "wire dia", "active coils"],
-        "exclude": ["coil end", "end shape", "clsd end", "open end"],
-    },
-    "material_block": {
-        "include": ["mtrl indic", "manufctrer", "thick", "heat trt"],
-        "exclude": [],
-    },
-    "revision_block": {
-        "include": ["revision note", "parts no", "parts", "designed by"],
-        "exclude": [],
-    },
-}
+# "auto"  : tự dò bảng bằng đường kẻ (nhanh, dùng cho file đa dạng mẫu, nhưng
+#           heuristic không hoàn hảo 100% — có thể lẫn/lọt vài vùng, đặc biệt
+#           với bản vẽ có nhiều đường kích thước tạo hình chữ nhật giả)
+# "fixed" : cắt theo toạ độ % cố định khai báo sẵn trong CROP_REGIONS
+#           (CHÍNH XÁC TUYỆT ĐỐI — rất nên dùng khi nhiều file cùng 1 khuôn mẫu,
+#           như các bản vẽ Canon dùng chung format E-M-A4,AM01)
+CROP_MODE = "auto"
+
+# Cách lấy toạ độ cho chế độ "fixed":
+#   1. Chạy CROP_MODE="auto" một lần với 1 file mẫu, mở debug_page_XXX.png
+#   2. Dùng Paint/GIMP để lấy toạ độ pixel (x, y, w, h) góc trên-trái từng bảng
+#   3. Chia cho kích thước ảnh gốc (script in ra khi chạy) để được tỉ lệ 0.0-1.0
+#      (dùng tỉ lệ thay vì pixel để không phụ thuộc DPI khi đổi cấu hình)
+CROP_REGIONS = [
+    # ví dụ theo file QC1-6046-000D201001.pdf — CHỈNH LẠI theo khuôn mẫu của bạn:
+    {"name": "spec_table", "x": 0.410, "y": 0.289, "w": 0.541, "h": 0.281},
+    {"name": "title_block", "x": 0.432, "y": 0.820, "w": 0.412, "h": 0.130},
+]
+
+
+def get_fixed_table_regions(img):
+    """Chuyển CROP_REGIONS (tỉ lệ) thành box pixel (x, y, w, h) theo kích thước ảnh thực tế."""
+    h, w = img.shape[:2]
+    boxes = []
+    for region in CROP_REGIONS:
+        x = int(region["x"] * w)
+        y = int(region["y"] * h)
+        rw = int(region["w"] * w)
+        rh = int(region["h"] * h)
+        boxes.append((x, y, rw, rh))
+    return boxes
 
 
 def render_pdf_to_images(pdf_path, out_dir, dpi=DPI):
@@ -101,27 +102,121 @@ def render_pdf_to_images(pdf_path, out_dir, dpi=DPI):
 
 
 def count_grid_lines(line_mask, box, axis, min_run_ratio=0.5):
+    """
+    Đếm số đường kẻ riêng biệt (dòng/cột) bên trong 1 box, dựa trên line_mask
+    (horiz_lines hoặc vert_lines). Dùng để phân biệt "bảng thật" (nhiều dòng kẻ
+    tạo thành lưới) với "đường kích thước/mũi tên" (chỉ 1-2 nét đơn).
+
+    axis='h': đếm số hàng kẻ ngang phân biệt theo trục Y
+    axis='v': đếm số cột kẻ dọc phân biệt theo trục X
+    min_run_ratio: 1 đường kẻ phải dài tối thiểu bằng tỉ lệ này so với box để được tính
+    """
     x, y, w, h = box
     crop = line_mask[y:y + h, x:x + w]
     if crop.size == 0:
         return 0
+
     if axis == 'h':
-        line_present = (crop.sum(axis=1) > (w * min_run_ratio * 255))
+        row_has_line = (crop.sum(axis=1) > (w * min_run_ratio * 255))
+        # đếm số cụm liên tiếp True (mỗi cụm = 1 đường kẻ ngang)
+        changes = np.diff(row_has_line.astype(int))
+        count = int((changes == 1).sum()) + (1 if row_has_line[0] else 0)
     else:
-        line_present = (crop.sum(axis=0) > (h * min_run_ratio * 255))
-    changes = np.diff(line_present.astype(int))
-    return int((changes == 1).sum()) + (1 if len(line_present) and line_present[0] else 0)
+        col_has_line = (crop.sum(axis=0) > (h * min_run_ratio * 255))
+        changes = np.diff(col_has_line.astype(int))
+        count = int((changes == 1).sum()) + (1 if col_has_line[0] else 0)
+    return count
+
+
+def detect_table_regions(image_path):
+    """
+    Dò các vùng bảng trong ảnh dựa trên đường kẻ ngang/dọc.
+    Trả về danh sách bounding box (x, y, w, h).
+
+    Thứ tự xử lý quan trọng:
+    1. Lấy TẤT CẢ vùng ứng viên theo diện tích (chưa lọc cấu trúc lưới) —
+       vì 1 hàng đơn lẻ của title-block có thể chỉ có 1 đường kẻ, chưa đủ
+       "lưới" để giữ lại nếu lọc ngay từ đầu.
+    2. GỘP các vùng liền kề/chồng nhau trước (nhiều hàng title-block đứng
+       sát nhau sẽ gộp thành 1 khối).
+    3. Lọc cấu trúc lưới TRÊN VÙNG ĐÃ GỘP — khối đã gộp (nhiều hàng+cột)
+       chắc chắn có nhiều đường kẻ hơn, dễ phân biệt với 1 hình chữ nhật
+       đơn từ đường kích thước/mũi tên (vốn không gộp được với gì khác).
+    """
+    img = cv2.imread(image_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Làm mờ nhẹ trước khi nhị phân hoá -> giảm nhiễu moiré khi ảnh là ảnh chụp màn hình/scan chất lượng thấp
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+
+    # Nhị phân hoá đảo màu: nét vẽ/chữ = trắng, nền = đen
+    binary = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 15, 10
+    )
+
+    h, w = gray.shape
+    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // LINE_KERNEL_SCALE, 1))
+    vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h // LINE_KERNEL_SCALE))
+
+    horiz_lines = cv2.erode(binary, horiz_kernel, iterations=1)
+    horiz_lines = cv2.dilate(horiz_lines, horiz_kernel, iterations=1)
+
+    vert_lines = cv2.erode(binary, vert_kernel, iterations=1)
+    vert_lines = cv2.dilate(vert_lines, vert_kernel, iterations=1)
+
+    # Kết hợp đường ngang + dọc -> khung bảng
+    table_mask = cv2.add(horiz_lines, vert_lines)
+    table_mask = cv2.dilate(table_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), iterations=1)
+
+    # RETR_TREE để lấy cả các khung lồng bên trong (bảng thật thường nằm trong khung viền
+    # ngoài cùng của cả trang, nên phải nhìn cả contour con, không chỉ contour ngoài cùng)
+    contours, _ = cv2.findContours(table_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    min_area = MIN_TABLE_AREA_RATIO * w * h
+    max_area = MAX_TABLE_AREA_RATIO * w * h
+    candidates = []
+    for cnt in contours:
+        x, y, cw, ch = cv2.boundingRect(cnt)
+        area = cw * ch
+        if min_area <= area <= max_area:
+            candidates.append((x, y, cw, ch))
+
+    # Bước 1: gộp các ứng viên liền kề/chồng nhau trước khi lọc cấu trúc
+    gap_px = int(MERGE_GAP_RATIO * w)
+    merged = merge_overlapping_boxes(candidates, gap=gap_px)
+
+    # Bước 2: lọc cấu trúc lưới trên từng vùng ĐÃ GỘP
+    boxes = []
+    for (x, y, cw, ch) in merged:
+        n_rows = count_grid_lines(horiz_lines, (x, y, cw, ch), axis='h')
+        n_cols = count_grid_lines(vert_lines, (x, y, cw, ch), axis='v')
+        if n_rows >= MIN_GRID_LINES and n_cols >= MIN_GRID_LINES:
+            boxes.append((x, y, cw, ch))
+
+    # Sắp theo thứ tự đọc: trên xuống dưới, trái sang phải
+    boxes.sort(key=lambda b: (b[1], b[0]))
+    return boxes, img
 
 
 def _boxes_should_merge(r1, r2, leaf_area1, leaf_area2, gap, align_ratio=0.5, min_fill_ratio=0.6):
+    """
+    2 box được gộp nếu chồng nhau thực sự, HOẶC thẳng hàng + khoảng cách <= gap
+    + hình chữ nhật kết quả không bị "rỗng" quá nhiều. leaf_area1/2 là tổng
+    diện tích các box GỐC (trước khi gộp) hợp thành r1/r2 — dùng giá trị này
+    (thay vì diện tích r1/r2 hiện tại) để fill_ratio chính xác qua nhiều bước gộp.
+    """
     x1, y1, x2, y2 = r1
     a1, b1, a2, b2 = r2
+
     if x1 < a2 and a1 < x2 and y1 < b2 and b1 < y2:
         return True
+
     width1, width2 = x2 - x1, a2 - a1
     height1, height2 = y2 - y1, b2 - b1
+
     x_overlap = min(x2, a2) - max(x1, a1)
     y_overlap = min(y2, b2) - max(y1, b1)
+
     aligned_vert = x_overlap > align_ratio * min(width1, width2)
     aligned_horiz = y_overlap > align_ratio * min(height1, height2)
 
@@ -143,8 +238,13 @@ def _boxes_should_merge(r1, r2, leaf_area1, leaf_area2, gap, align_ratio=0.5, mi
 
 
 def merge_overlapping_boxes(boxes, gap=0):
+    """
+    Gộp các box chồng lấn HOẶC thẳng hàng + cách nhau <= gap px + không tạo
+    khung "rỗng" quá mức (xem _boxes_should_merge). gap=0: chỉ gộp box chồng nhau.
+    """
     if not boxes:
         return []
+    # mỗi phần tử: [x1, y1, x2, y2, tổng_diện_tích_các_box_gốc_đã_gộp_vào_đây]
     rects = [[x, y, x + w, y + h, w * h] for (x, y, w, h) in boxes]
     merged = True
     while merged:
@@ -170,166 +270,6 @@ def merge_overlapping_boxes(boxes, gap=0):
     return [(x1, y1, x2 - x1, y2 - y1) for x1, y1, x2, y2, _ in rects]
 
 
-def get_candidate_boxes(image_path):
-    """
-    Lấy TẤT CẢ box ứng viên có cấu trúc lưới (đường kẻ ngang+dọc) trong ảnh,
-    KHÔNG cố lọc xem box nào là "bảng đúng" — việc chọn bảng nào sẽ do bước
-    neo từ khoá (anchor) phía sau quyết định, không phải do heuristic hình học.
-    """
-    img = cv2.imread(image_path)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    binary = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 15, 10
-    )
-
-    h, w = gray.shape
-    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // LINE_KERNEL_SCALE, 1))
-    vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h // LINE_KERNEL_SCALE))
-
-    horiz_lines = cv2.erode(binary, horiz_kernel, iterations=1)
-    horiz_lines = cv2.dilate(horiz_lines, horiz_kernel, iterations=1)
-    vert_lines = cv2.erode(binary, vert_kernel, iterations=1)
-    vert_lines = cv2.dilate(vert_lines, vert_kernel, iterations=1)
-
-    table_mask = cv2.add(horiz_lines, vert_lines)
-    table_mask = cv2.dilate(table_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), iterations=1)
-
-    contours, _ = cv2.findContours(table_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    min_area = MIN_TABLE_AREA_RATIO * w * h
-    max_area = MAX_TABLE_AREA_RATIO * w * h
-    candidates = []
-    for cnt in contours:
-        x, y, cw, ch = cv2.boundingRect(cnt)
-        area = cw * ch
-        if min_area <= area <= max_area:
-            candidates.append((x, y, cw, ch))
-
-    gap_px = int(MERGE_GAP_RATIO * w)
-    merged = merge_overlapping_boxes(candidates, gap=gap_px)
-
-    # Giữ luôn CẢ box gốc (chưa merge) lẫn box đã merge làm ứng viên — vì đôi khi
-    # box merge đúng, đôi khi box merge bị gộp nhầm (như case SPG+COIL END) và
-    # box gốc/box con mới là cái ta cần. Bước neo từ khoá sẽ tự chọn cái đúng.
-    all_candidates = candidates + merged
-    boxes = []
-    for (x, y, cw, ch) in all_candidates:
-        n_rows = count_grid_lines(horiz_lines, (x, y, cw, ch), axis='h')
-        n_cols = count_grid_lines(vert_lines, (x, y, cw, ch), axis='v')
-        if n_rows >= MIN_GRID_LINES and n_cols >= MIN_GRID_LINES:
-            boxes.append((x, y, cw, ch))
-    # loại box trùng lặp gần như hoàn toàn
-    boxes = list(set(boxes))
-    return boxes, img
-
-
-def ocr_page_words(reader, img):
-    """Chạy OCR 1 lần trên toàn trang, trả về list (cx, cy, text_lower)."""
-    results = reader.readtext(img, detail=1)
-    words = []
-    for bbox, text, conf in results:
-        if conf < MIN_CONFIDENCE:
-            continue
-        xs = [p[0] for p in bbox]
-        ys = [p[1] for p in bbox]
-        cx, cy = sum(xs) / 4, sum(ys) / 4
-        words.append((cx, cy, text.lower()))
-    return words
-
-
-def _trim_box_away_from_points(box, own_pts, foreign_pts, margin=10):
-    """
-    Cat bot box theo canh gan nhat voi cac diem "foreign" (khong thuoc bang nay),
-    chua lai phan chua cac diem "own". Xu ly ca truc ngang (trai/phai) lan doc
-    (tren/duoi) - chon truc nao tach 2 nhom diem ro rang hon.
-    """
-    x, y, w, h = box
-    own_cx = sum(p[0] for p in own_pts) / len(own_pts)
-    own_cy = sum(p[1] for p in own_pts) / len(own_pts)
-    for_cx = sum(p[0] for p in foreign_pts) / len(foreign_pts)
-    for_cy = sum(p[1] for p in foreign_pts) / len(foreign_pts)
-
-    x_sep = abs(own_cx - for_cx) / max(w, 1)
-    y_sep = abs(own_cy - for_cy) / max(h, 1)
-
-    if x_sep >= y_sep:
-        foreign_xs = [p[0] for p in foreign_pts]
-        if for_cx >= own_cx:
-            new_right = int(min(foreign_xs) - margin)
-            w = max(10, new_right - x)
-        else:
-            new_x = int(max(foreign_xs) + margin)
-            w = w - (new_x - x)
-            x = new_x
-    else:
-        foreign_ys = [p[1] for p in foreign_pts]
-        if for_cy >= own_cy:
-            new_bottom = int(min(foreign_ys) - margin)
-            h = max(10, new_bottom - y)
-        else:
-            new_y = int(max(foreign_ys) + margin)
-            h = h - (new_y - y)
-            y = new_y
-    return (x, y, w, h)
-
-
-def select_tables_by_anchor(candidate_boxes, page_words, keywords=TABLE_KEYWORDS):
-    """
-    Với mỗi bảng cần trong TABLE_KEYWORDS: tìm box ứng viên NHỎ NHẤT có chứa
-    >=1 điểm từ khoá "include". Nếu box đó cũng lẫn điểm "exclude" -> cắt bớt
-    theo cạnh gần điểm exclude nhất (không loại bỏ cả box).
-    Trả về dict {table_name: (x, y, w, h)}.
-    """
-    def points_in_box(points, box):
-        x, y, w, h = box
-        return [(px, py) for (px, py, _t) in points if x <= px <= x + w and y <= py <= y + h]
-
-    include_pts_by_name, exclude_pts_by_name = {}, {}
-    for name, spec in keywords.items():
-        include_pts_by_name[name] = [
-            (px, py, t) for (px, py, t) in page_words if any(k in t for k in spec.get("include", []))
-        ]
-        exclude_pts_by_name[name] = [
-            (px, py, t) for (px, py, t) in page_words if any(k in t for k in spec.get("exclude", []))
-        ]
-
-    best_box_by_name = {}
-    for name, include_pts in include_pts_by_name.items():
-        if not include_pts:
-            print(f"       [!] Không tìm thấy từ khoá cho bảng '{name}' — bỏ qua.")
-            continue
-        best_box, best_area = None, None
-        for box in candidate_boxes:
-            if len(points_in_box(include_pts, box)) == 0:
-                continue
-            area = box[2] * box[3]
-            if best_area is None or area < best_area:
-                best_area, best_box = area, box
-        if best_box is None:
-            print(f"       [!] Có từ khoá nhưng không khớp box ứng viên nào cho '{name}'.")
-            continue
-        best_box_by_name[name] = best_box
-
-    results = {}
-    for name, box in best_box_by_name.items():
-        own_pts = points_in_box(include_pts_by_name[name], box)
-        # (a) điểm exclude riêng của bảng này
-        foreign_pts = points_in_box(exclude_pts_by_name[name], box)
-        # (b) điểm include của bảng KHÁC đang dùng chung box này (2 bảng bị gộp
-        #     vào 1 candidate duy nhất, không có box con nào tách sẵn)
-        for other_name, other_box in best_box_by_name.items():
-            if other_name != name and other_box == box:
-                foreign_pts += points_in_box(include_pts_by_name[other_name], box)
-
-        if foreign_pts:
-            new_box = _trim_box_away_from_points(box, own_pts, foreign_pts)
-            print(f"       [i] Bảng '{name}' bị lẫn vùng khác -> đã cắt bớt biên {box} -> {new_box}.")
-            box = new_box
-
-        results[name] = box
-    return results
-
-
 def crop_and_upscale(img, box, padding=PADDING, scale=UPSCALE_FACTOR):
     x, y, w, h = box
     ih, iw = img.shape[:2]
@@ -342,6 +282,7 @@ def crop_and_upscale(img, box, padding=PADDING, scale=UPSCALE_FACTOR):
 
 
 def mask_out_boxes(img, boxes):
+    """Trả về bản sao ảnh với các vùng bảng đã bị che trắng (để OCR riêng phần còn lại)."""
     out = img.copy()
     for (x, y, w, h) in boxes:
         cv2.rectangle(out, (x, y), (x + w, y + h), (255, 255, 255), -1)
@@ -358,38 +299,34 @@ def process_pdf(pdf_path, reader, summary_rows):
     page_dir = os.path.join(OUTPUT_DIR, base_name)
     os.makedirs(page_dir, exist_ok=True)
 
-    print(f"[1/5] Render PDF -> ảnh: {pdf_path}")
+    print(f"[1/4] Render PDF -> ảnh: {pdf_path}")
     image_paths = render_pdf_to_images(pdf_path, page_dir)
 
     for idx, img_path in enumerate(image_paths, start=1):
-        print(f"[2/5] Dò box ứng viên trang {idx}: {img_path}")
-        candidate_boxes, img = get_candidate_boxes(img_path)
-        print(f"       -> {len(candidate_boxes)} box ứng viên")
+        img = cv2.imread(img_path)
+        ph, pw = img.shape[:2]
 
-        print(f"[3/5] OCR toàn trang để lấy vị trí từ khoá (trang {idx})")
-        page_words = ocr_page_words(reader, img)
+        if CROP_MODE == "fixed":
+            boxes = get_fixed_table_regions(img)
+            print(f"[2/4] Dùng {len(boxes)} vùng cắt cố định (trang {idx}, kích thước ảnh {pw}x{ph})")
+        else:
+            print(f"[2/4] Dò vùng bảng trang {idx}: {img_path} (kích thước ảnh {pw}x{ph})")
+            boxes, img = detect_table_regions(img_path)
+            print(f"       -> tìm thấy {len(boxes)} vùng bảng")
 
-        print(f"[4/5] Neo từ khoá -> chọn bảng đích (trang {idx})")
-        tables = select_tables_by_anchor(candidate_boxes, page_words)
-        print(f"       -> chọn được {len(tables)}/{len(TABLE_KEYWORDS)} bảng: {list(tables.keys())}")
-
-        # Ảnh debug: đỏ = bảng được chọn, xanh mờ = box ứng viên khác (để soi khi cần chỉnh keyword)
+        # Ảnh debug: vẽ khung đỏ quanh vùng bảng phát hiện được
         debug_img = img.copy()
-        for (x, y, w, h) in candidate_boxes:
-            cv2.rectangle(debug_img, (x, y), (x + w, y + h), (255, 200, 0), 1)
-        for name, (x, y, w, h) in tables.items():
+        for (x, y, w, h) in boxes:
             cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 0, 255), 3)
-            cv2.putText(debug_img, name, (x, max(0, y - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
         cv2.imwrite(os.path.join(page_dir, f"debug_page_{idx:03d}.png"), debug_img)
 
-        selected_boxes = list(tables.values())
-        for name, box in tables.items():
+        # OCR riêng từng vùng bảng
+        for t_idx, box in enumerate(boxes, start=1):
             crop = crop_and_upscale(img, box)
-            crop_path = os.path.join(page_dir, f"page_{idx:03d}_{name}.png")
+            crop_path = os.path.join(page_dir, f"page_{idx:03d}_table_{t_idx:02d}.png")
             cv2.imwrite(crop_path, crop)
 
-            print(f"[5/5] OCR bảng '{name}' (trang {idx})")
+            print(f"[3/4] OCR bảng {t_idx}/{len(boxes)} (trang {idx})")
             lines = ocr_array(reader, crop)
             table_text = "\n".join(text for text, conf in lines)
             with open(crop_path.replace(".png", ".txt"), "w", encoding="utf-8") as f:
@@ -397,11 +334,13 @@ def process_pdf(pdf_path, reader, summary_rows):
 
             for text, conf in lines:
                 summary_rows.append({
-                    "file": base_name, "page": idx, "region": name,
+                    "file": base_name, "page": idx, "region": f"table_{t_idx}",
                     "text": text, "confidence": round(conf, 3),
                 })
 
-        remainder = mask_out_boxes(img, selected_boxes)
+        # OCR phần còn lại của trang (đã che các vùng bảng để tránh trùng lặp)
+        remainder = mask_out_boxes(img, boxes)
+        print(f"[4/4] OCR phần ngoài bảng (trang {idx})")
         lines = ocr_array(reader, remainder)
         nontable_text = "\n".join(text for text, conf in lines)
         with open(os.path.join(page_dir, f"page_{idx:03d}_nontable.txt"), "w", encoding="utf-8") as f:
@@ -416,7 +355,7 @@ def process_pdf(pdf_path, reader, summary_rows):
 
 def main():
     if len(sys.argv) < 2:
-        print("Cách dùng: python ocr_pdf_pipeline_v3.py <file.pdf hoặc thư_mục>")
+        print("Cách dùng: python ocr_pdf_pipeline_v2.py <file.pdf hoặc thư_mục>")
         sys.exit(1)
 
     input_path = sys.argv[1]
@@ -446,7 +385,7 @@ def main():
         writer.writerows(summary_rows)
 
     print(f"\nHoàn tất. Xem: {summary_path}")
-    print("Kiểm tra debug_page_XXX.png: khung đỏ = bảng đã chọn, khung vàng mờ = box ứng viên còn lại.")
+    print("Kiểm tra file debug_page_XXX.png để xác nhận vùng bảng có được dò đúng không.")
 
 
 if __name__ == "__main__":
