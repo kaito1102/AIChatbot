@@ -1,29 +1,3 @@
-"""
-Pipeline OCR cho PDF scan CÓ TÁCH BẢNG (table) trước khi OCR
-=============================================================
-
-Ý tưởng: bảng trong bản vẽ/tài liệu scan thường có đường kẻ ngang/dọc rõ.
-Script này dò các đường kẻ đó bằng OpenCV để tìm vùng bảng, cắt riêng
-từng vùng bảng ra thành ảnh nhỏ, rồi mới chạy OCR trên từng ảnh đã cắt.
-OCR trên ảnh đã cắt + phóng to sẽ chính xác hơn nhiều so với OCR nguyên
-cả trang (nhiễu nét vẽ kỹ thuật, chữ nhỏ, mật độ cao).
-
-Cài đặt (chỉ cần pip):
-    pip install pymupdf easyocr opencv-python-headless numpy
-
-Cách dùng:
-    python ocr_pdf_pipeline_v2.py input.pdf
-    python ocr_pdf_pipeline_v2.py input_folder/
-
-Kết quả trong output/<ten_file>/:
-    page_001.png              - ảnh cả trang
-    page_001_table_01.png     - từng vùng bảng đã cắt
-    page_001_table_01.txt     - text OCR của riêng vùng bảng đó
-    page_001_nontable.txt     - text OCR phần còn lại của trang (không phải bảng)
-    debug_page_001.png        - ảnh debug: khung đỏ = vùng bảng đã phát hiện
-output/summary.csv            - bảng tổng hợp toàn bộ, có cột "region" (table/nontable)
-"""
-
 import sys
 import os
 import csv
@@ -47,26 +21,11 @@ LINE_KERNEL_SCALE = 40         # càng lớn -> kernel càng nhỏ -> bắt đư
 MIN_GRID_LINES = 2              # số đường kẻ ngang/dọc tối thiểu để coi là "bảng" (loại đường kích thước/mũi tên)
 PADDING = 6                     # padding quanh vùng bảng khi cắt (px)
 UPSCALE_FACTOR = 2              # phóng to ảnh bảng trước khi OCR để tăng độ chính xác
-MERGE_GAP_RATIO = 0.02          # gộp các bảng cách nhau trong khoảng này (tỉ lệ % chiều rộng trang)
+MERGE_GAP_RATIO = 0.003          # gộp các bảng cách nhau trong khoảng này (tỉ lệ % chiều rộng trang)
                                  # -> ví dụ nhiều hàng title-block đứng sát nhau sẽ gộp thành 1 vùng crop
                                  # tăng giá trị này nếu vẫn còn bảng liền kề bị cắt riêng lẻ
-
-# ------------------------------------------------------------------
-# CHẾ ĐỘ CẮT BẢNG — chọn 1 trong 2
-# ------------------------------------------------------------------
-# "auto"  : tự dò bảng bằng đường kẻ (nhanh, dùng cho file đa dạng mẫu, nhưng
-#           heuristic không hoàn hảo 100% — có thể lẫn/lọt vài vùng, đặc biệt
-#           với bản vẽ có nhiều đường kích thước tạo hình chữ nhật giả)
-# "fixed" : cắt theo toạ độ % cố định khai báo sẵn trong CROP_REGIONS
-#           (CHÍNH XÁC TUYỆT ĐỐI — rất nên dùng khi nhiều file cùng 1 khuôn mẫu,
-#           như các bản vẽ Canon dùng chung format E-M-A4,AM01)
 CROP_MODE = "auto"
 
-# Cách lấy toạ độ cho chế độ "fixed":
-#   1. Chạy CROP_MODE="auto" một lần với 1 file mẫu, mở debug_page_XXX.png
-#   2. Dùng Paint/GIMP để lấy toạ độ pixel (x, y, w, h) góc trên-trái từng bảng
-#   3. Chia cho kích thước ảnh gốc (script in ra khi chạy) để được tỉ lệ 0.0-1.0
-#      (dùng tỉ lệ thay vì pixel để không phụ thuộc DPI khi đổi cấu hình)
 CROP_REGIONS = [
     # ví dụ theo file QC1-6046-000D201001.pdf — CHỈNH LẠI theo khuôn mẫu của bạn:
     {"name": "spec_table", "x": 0.410, "y": 0.289, "w": 0.541, "h": 0.281},
@@ -127,6 +86,74 @@ def count_grid_lines(line_mask, box, axis, min_run_ratio=0.5):
         count = int((changes == 1).sum()) + (1 if col_has_line[0] else 0)
     return count
 
+def count_intersections(horiz_lines, vert_lines, box):
+    """
+    Đếm số giao điểm giữa line ngang và line dọc.
+    Bảng thật sẽ có rất nhiều giao điểm.
+    """
+
+    x, y, w, h = box
+
+    h_crop = horiz_lines[y:y+h, x:x+w]
+    v_crop = vert_lines[y:y+h, x:x+w]
+
+    intersections = cv2.bitwise_and(h_crop, v_crop)
+
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(
+        intersections
+    )
+
+    count = 0
+
+    for i in range(1, num_labels):
+        area = stats[i, cv2.CC_STAT_AREA]
+
+        if area >= 2:
+            count += 1
+
+    return count
+
+def grid_density(horiz_lines, vert_lines, box):
+
+    x, y, w, h = box
+
+    mask = cv2.add(
+        horiz_lines[y:y+h, x:x+w],
+        vert_lines[y:y+h, x:x+w]
+    )
+
+    line_pixels = cv2.countNonZero(mask)
+
+    return line_pixels / (w * h)
+    
+def detect_table_cells(table_mask):
+
+    contours, _ = cv2.findContours(
+        table_mask,
+        cv2.RETR_TREE,
+        cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    cells = []
+
+    for cnt in contours:
+
+        x, y, w, h = cv2.boundingRect(cnt)
+
+        area = w * h
+
+        if area < 5000:
+            continue
+
+        if h < 30:
+            continue
+
+        if w < 40:
+            continue
+
+        cells.append((x, y, w, h))
+
+    return cells
 
 def detect_table_regions(image_path):
     """
@@ -177,23 +204,88 @@ def detect_table_regions(image_path):
     candidates = []
     for cnt in contours:
         x, y, cw, ch = cv2.boundingRect(cnt)
+
+        print(
+            f"CANDIDATE: x={x} y={y} w={cw} h={ch}"
+        )
+
         area = cw * ch
+
         if min_area <= area <= max_area:
             candidates.append((x, y, cw, ch))
 
     # Bước 1: gộp các ứng viên liền kề/chồng nhau trước khi lọc cấu trúc
     gap_px = int(MERGE_GAP_RATIO * w)
     merged = merge_overlapping_boxes(candidates, gap=gap_px)
+    print("\n=== MERGED ===")
+
+    for b in merged:
+        if 2400 < b[1] < 2900:
+            print(b)
+
+    print("================")
 
     # Bước 2: lọc cấu trúc lưới trên từng vùng ĐÃ GỘP
     boxes = []
     for (x, y, cw, ch) in merged:
-        n_rows = count_grid_lines(horiz_lines, (x, y, cw, ch), axis='h')
-        n_cols = count_grid_lines(vert_lines, (x, y, cw, ch), axis='v')
-        if n_rows >= MIN_GRID_LINES and n_cols >= MIN_GRID_LINES:
+
+        n_rows = count_grid_lines(
+            horiz_lines,
+            (x, y, cw, ch),
+            axis='h'
+        )
+
+        n_cols = count_grid_lines(
+            vert_lines,
+            (x, y, cw, ch),
+            axis='v'
+        )
+
+        n_intersections = count_intersections(
+            horiz_lines,
+            vert_lines,
+            (x, y, cw, ch)
+        )
+
+        density = grid_density(
+            horiz_lines,
+            vert_lines,
+            (x, y, cw, ch)
+        )
+
+        aspect_ratio = cw / ch
+
+        # loại vùng quá dẹt
+        if aspect_ratio > 12:
+            continue
+
+        # loại vùng quá nhỏ theo chiều cao
+        if ch < 25:
+            continue
+
+        # bảng thật
+        print(
+            f"BOX ({x},{y},{cw},{ch}) "
+            f"rows={n_rows} "
+            f"cols={n_cols} "
+            f"inter={n_intersections} "
+            f"density={density:.4f}"
+        )
+        is_table = (
+            density >= 0.02
+            and n_intersections >= 5
+        )
+
+        if is_table:
             boxes.append((x, y, cw, ch))
 
     # Sắp theo thứ tự đọc: trên xuống dưới, trái sang phải
+    print("\n===== FINAL BOXES =====")
+
+    for box in boxes:
+        print(box)
+
+    print("=======================\n")
     boxes.sort(key=lambda b: (b[1], b[0]))
     return boxes, img
 
@@ -217,8 +309,8 @@ def _boxes_should_merge(r1, r2, leaf_area1, leaf_area2, gap, align_ratio=0.5, mi
     x_overlap = min(x2, a2) - max(x1, a1)
     y_overlap = min(y2, b2) - max(y1, b1)
 
-    aligned_vert = x_overlap > align_ratio * min(width1, width2)
-    aligned_horiz = y_overlap > align_ratio * min(height1, height2)
+    aligned_vert = x_overlap > 0.8 * min(width1, width2)
+    aligned_horiz = y_overlap > 0.8 * min(height1, height2)
 
     def fill_ratio_ok(mx1, my1, mx2, my2):
         merged_area = (mx2 - mx1) * (my2 - my1)
@@ -227,8 +319,18 @@ def _boxes_should_merge(r1, r2, leaf_area1, leaf_area2, gap, align_ratio=0.5, mi
         return (leaf_area1 + leaf_area2) / merged_area >= min_fill_ratio
 
     if aligned_vert:
+
         vgap = max(b1 - y2, y1 - b2)
-        if 0 <= vgap <= gap and fill_ratio_ok(min(x1, a1), min(y1, b1), max(x2, a2), max(y2, b2)):
+
+        if (
+            0 <= vgap <= max(gap, 15)
+            and fill_ratio_ok(
+                min(x1, a1),
+                min(y1, b1),
+                max(x2, a2),
+                max(y2, b2)
+            )
+        ):
             return True
     if aligned_horiz:
         hgap = max(a1 - x2, x1 - a2)
@@ -259,7 +361,18 @@ def merge_overlapping_boxes(boxes, gap=0):
                 if used[j]:
                     continue
                 a1, b1, a2, b2, leaf2 = rects[j]
-                if _boxes_should_merge([x1, y1, x2, y2], [a1, b1, a2, b2], leaf1, leaf2, gap):
+                if _boxes_should_merge(
+                    [x1, y1, x2, y2],
+                    [a1, b1, a2, b2],
+                    leaf1,
+                    leaf2,
+                    gap
+                ):
+
+                    # không gộp 2 bảng nằm trên dưới nhau nếu khoảng cách
+                    # lớn hơn 15 pixel
+                    vertical_gap = max(b1 - y2, y1 - b2)
+
                     x1, y1, x2, y2 = min(x1, a1), min(y1, b1), max(x2, a2), max(y2, b2)
                     leaf1 = leaf1 + leaf2
                     used[j] = True
