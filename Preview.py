@@ -50,7 +50,25 @@ REF_REGIONS = {
 
 def get_ocr_engine():
     print(f"Khởi tạo PaddleOCR (ngôn ngữ: {LANG})... lần đầu sẽ tải model.")
-    return PaddleOCR(lang=LANG, use_doc_orientation_classify=False, use_doc_unwarping=False)
+    # enable_mkldnn=False: bắt buộc trên nhiều máy CPU Windows vì PaddlePaddle 3.x có
+    # lỗi đã biết (NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support)
+    # khi bật oneDNN với "new executor" PIR — xem PaddlePaddle/PaddleOCR issue #17955, #18162.
+    try:
+        return PaddleOCR(
+            lang=LANG,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            enable_mkldnn=False,
+        )
+    except TypeError:
+        # bản PaddleOCR/paddlex cũ hơn có thể không nhận kwarg này qua path khởi tạo
+        # -> thử lại không có enable_mkldnn, và set qua biến môi trường trước khi import paddle
+        print("  (enable_mkldnn không được nhận trực tiếp, thử lại không có tham số này)")
+        return PaddleOCR(
+            lang=LANG,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+        )
 
 
 def run_ocr(engine, img_bgr):
