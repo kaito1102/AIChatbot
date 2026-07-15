@@ -1,23 +1,25 @@
 """
 Trích xuất 1 bảng lớn (MTRL INDIC...SURF TRT) + 2 bảng nhỏ (DATE/REV/CLS,
-PARTS NO/PARTS NAME) — CHỊU ĐƯỢC xê dịch vị trí giữa các file.
+PARTS NO/PARTS NAME) — dùng PaddleOCR thay EasyOCR (đọc chữ kỹ thuật/lẫn
+tiếng Nhật-Anh chính xác hơn).
 ========================================================================
 
-Ý tưởng "neo động" (anchor):
-  Toạ độ tuyệt đối cố định sẽ sai nếu file khác bị lệch vị trí (do scan/
-  margin khác nhau). Nhưng NHÃN TIÊU ĐỀ (chữ "MTRL INDIC.") luôn giống hệt
-  nhau ở mọi file cùng khuôn mẫu. Nên:
-    1. OCR tìm vị trí text "MTRL INDIC" trên trang -> đây là điểm neo.
-    2. Tính độ lệch (dx, dy) so với vị trí neo trong file mẫu đã đo sẵn.
-    3. Dịch cả 3 vùng cắt (đã đo sẵn dạng offset so với điểm neo) theo đúng
-       độ lệch đó -> luôn đúng vị trí dù file bị xê dịch bao nhiêu.
+Cùng cơ chế "neo động" (anchor) như bản EasyOCR:
+    1. OCR tìm vị trí text "MTRL INDIC" trên trang -> điểm neo.
+    2. Tính độ lệch (dx, dy) so với vị trí neo trong file mẫu.
+    3. Dịch cả 3 vùng cắt theo đúng độ lệch đó -> đúng vị trí dù file bị xê dịch.
 
 Cài đặt:
-    pip install pymupdf easyocr opencv-python-headless numpy
+    pip install paddlepaddle paddleocr pymupdf opencv-python-headless numpy
+
+LƯU Ý VỀ PHIÊN BẢN: script này viết cho PaddleOCR >= 3.0 (API `.predict()`,
+kết quả trả về dạng dict với khoá 'rec_texts'/'rec_boxes'/'rec_scores').
+Nếu `pip show paddleocr` ra bản 2.x, API cũ dùng `.ocr(img, cls=True)` và
+cấu trúc kết quả khác hẳn — báo lại để mình viết bản tương thích 2.x.
 
 Cách dùng:
-    python ocr_anchor_regions.py input.pdf
-    python ocr_anchor_regions.py input_folder/
+    python ocr_anchor_regions_paddle.py input.pdf
+    python ocr_anchor_regions_paddle.py input_folder/
 """
 
 import sys
@@ -27,36 +29,48 @@ import re
 import fitz
 import cv2
 import numpy as np
-import easyocr
+from paddleocr import PaddleOCR
 
 DPI = 300
-LANGUAGES = ['en']
+LANG = 'en'   # PaddleOCR: 'en'=Anh, 'ch'=Trung+Anh, 'japan'=Nhật, 'korean'=Hàn...
 OUTPUT_DIR = "output"
 UPSCALE_FACTOR = 3
+MIN_CONFIDENCE = 0.5
 
-# Text neo (anchor) — dùng để định vị. Có thể sai khác nhẹ do OCR (vd "MTRLINDIC"),
-# nên so khớp bằng cách loại khoảng trắng/dấu câu rồi so "chứa chuỗi con".
 ANCHOR_TEXT = "MTRLINDIC"
-
-# Vùng tìm neo: OCR toàn bộ nửa dưới trang (neo luôn nằm ở title-block, không
-# cần OCR cả trang -> nhanh hơn). Chỉnh nếu title-block nằm ở vị trí khác.
 ANCHOR_SEARCH_REGION = (0.0, 0.55, 1.0, 0.45)  # (x, y, w, h) tỉ lệ trang
 
-# ------------------------------------------------------------------
-# HIỆU CHỈNH TỪ FILE MẪU (QC1-6046-000D201001.pdf, DPI=300, trang 2481x3508)
-# ------------------------------------------------------------------
-# Vị trí neo THẬT trong file mẫu (góc trên-trái của text "MTRL INDIC.")
 REF_ANCHOR_XY = (678, 2592)
-
-# 3 vùng cần cắt, lưu dưới dạng OFFSET (px, tại DPI=300) SO VỚI ĐIỂM NEO,
-# không phải toạ độ tuyệt đối -> khi neo dịch chuyển, vùng cắt dịch theo.
 REF_REGIONS = {
     "BIG_TABLE":         {"dx": 0,   "dy": 0,   "w": 839,  "h": 284},
     "DATE_ROW":          {"dx": 390, "dy": 461, "w": 1026, "h": 116},
     "PARTSNO_NAME_ROW":  {"dx": 390, "dy": 577, "w": 1026, "h": 236},
 }
-# (dx,dy,w,h tính từ: BIG_TABLE=(678,2592,1517,2876); DATE_ROW=(1068,3053,2094,3169);
-#  PARTSNO_NAME_ROW=(1068,3169,2094,3405); trừ đi REF_ANCHOR_XY=(678,2592))
+
+
+def get_ocr_engine():
+    print(f"Khởi tạo PaddleOCR (ngôn ngữ: {LANG})... lần đầu sẽ tải model.")
+    return PaddleOCR(lang=LANG, use_doc_orientation_classify=False, use_doc_unwarping=False)
+
+
+def run_ocr(engine, img_bgr):
+    """
+    Chạy PaddleOCR trên 1 ảnh (numpy BGR). Trả về list (text, score, box)
+    với box = [x1, y1, x2, y2] (toạ độ TRONG ảnh truyền vào).
+    """
+    results = engine.predict(img_bgr)
+    if not results:
+        return []
+    res = results[0]
+    texts = res.get("rec_texts", [])
+    scores = res.get("rec_scores", [])
+    boxes = res.get("rec_boxes", [])
+    out = []
+    for text, score, box in zip(texts, scores, boxes):
+        if score >= MIN_CONFIDENCE:
+            x1, y1, x2, y2 = [float(v) for v in box]
+            out.append((text, float(score), (x1, y1, x2, y2)))
+    return out
 
 
 def render_first_page(pdf_path, dpi=DPI):
@@ -74,29 +88,22 @@ def normalize(text):
     return re.sub(r'[^A-Z0-9]', '', text.upper())
 
 
-def find_anchor(reader, img):
-    """
-    OCR vùng ANCHOR_SEARCH_REGION để tìm text neo "MTRL INDIC".
-    Trả về (x, y) góc trên-trái của text neo trong ảnh GỐC (đã cộng lại offset
-    vùng tìm kiếm), hoặc None nếu không tìm thấy.
-    """
+def find_anchor(engine, img):
+    """Tìm text neo 'MTRL INDIC' trong vùng ANCHOR_SEARCH_REGION. Trả về (x,y) góc trên-trái, hoặc None."""
     h, w = img.shape[:2]
     rx, ry, rw, rh = ANCHOR_SEARCH_REGION
     x0, y0 = int(rx * w), int(ry * h)
     x1, y1 = int((rx + rw) * w), int((ry + rh) * h)
     search_crop = img[y0:y1, x0:x1]
 
-    results = reader.readtext(search_crop, detail=1)
+    detections = run_ocr(engine, search_crop)
     best = None
-    for (bbox, text, conf) in results:
+    for text, score, (bx1, by1, bx2, by2) in detections:
         norm = normalize(text)
         if ANCHOR_TEXT in norm or norm in ANCHOR_TEXT:
-            # bbox = 4 điểm góc; lấy điểm trên-trái
-            xs = [p[0] for p in bbox]
-            ys = [p[1] for p in bbox]
-            candidate = (x0 + min(xs), y0 + min(ys))
-            if best is None or conf > best[1]:
-                best = (candidate, conf)
+            candidate = (x0 + bx1, y0 + by1)
+            if best is None or score > best[1]:
+                best = (candidate, score)
     return best[0] if best else None
 
 
@@ -112,14 +119,16 @@ def crop_region(img, x, y, w, h, upscale=UPSCALE_FACTOR):
     return crop
 
 
-def ocr_crop(reader, crop_img):
+def ocr_crop_to_text(engine, crop_img):
     if crop_img is None:
         return ""
-    results = reader.readtext(crop_img, detail=0, paragraph=True)
-    return "\n".join(results).strip()
+    detections = run_ocr(engine, crop_img)
+    # sắp theo thứ tự đọc: trên->dưới, trái->phải (dùng tâm Y để gom theo hàng)
+    detections.sort(key=lambda d: (round(d[2][1] / 20), d[2][0]))
+    return "\n".join(text for text, score, box in detections).strip()
 
 
-def process_pdf(pdf_path, reader, summary_rows):
+def process_pdf(pdf_path, engine, summary_rows):
     base_name = os.path.splitext(os.path.basename(pdf_path))[0]
     page_dir = os.path.join(OUTPUT_DIR, base_name)
     os.makedirs(page_dir, exist_ok=True)
@@ -127,12 +136,11 @@ def process_pdf(pdf_path, reader, summary_rows):
     print(f"Xử lý: {pdf_path}")
     img = render_first_page(pdf_path)
 
-    anchor = find_anchor(reader, img)
+    anchor = find_anchor(engine, img)
     row = {"file": base_name}
 
     if anchor is None:
-        print("  !! KHÔNG tìm thấy điểm neo 'MTRL INDIC' -> bỏ qua file này "
-              "(kiểm tra ANCHOR_SEARCH_REGION hoặc chất lượng scan).")
+        print("  !! KHÔNG tìm thấy điểm neo 'MTRL INDIC' -> bỏ qua file này.")
         row["anchor_found"] = "NO"
         for name in REF_REGIONS:
             row[name] = ""
@@ -141,10 +149,10 @@ def process_pdf(pdf_path, reader, summary_rows):
 
     ax, ay = anchor
     dx_offset, dy_offset = ax - REF_ANCHOR_XY[0], ay - REF_ANCHOR_XY[1]
-    print(f"  Neo tìm thấy tại ({ax},{ay}) -> lệch so với mẫu: ({dx_offset:+d},{dy_offset:+d})")
+    print(f"  Neo tìm thấy tại ({ax:.0f},{ay:.0f}) -> lệch so với mẫu: ({dx_offset:+.0f},{dy_offset:+.0f})")
     row["anchor_found"] = "YES"
-    row["offset_x"] = dx_offset
-    row["offset_y"] = dy_offset
+    row["offset_x"] = round(dx_offset)
+    row["offset_y"] = round(dy_offset)
 
     for name, r in REF_REGIONS.items():
         x = ax + r["dx"]
@@ -152,7 +160,7 @@ def process_pdf(pdf_path, reader, summary_rows):
         crop = crop_region(img, x, y, r["w"], r["h"])
         if crop is not None:
             cv2.imwrite(os.path.join(page_dir, f"{name}.png"), crop)
-        text = ocr_crop(reader, crop)
+        text = ocr_crop_to_text(engine, crop)
         row[name] = text
         print(f"  {name}: {text[:80]!r}{'...' if len(text) > 80 else ''}")
 
@@ -161,7 +169,7 @@ def process_pdf(pdf_path, reader, summary_rows):
 
 def main():
     if len(sys.argv) < 2:
-        print("Cách dùng: python ocr_anchor_regions.py <file.pdf hoặc thư_mục>")
+        print("Cách dùng: python ocr_anchor_regions_paddle.py <file.pdf hoặc thư_mục>")
         sys.exit(1)
 
     input_path = sys.argv[1]
@@ -177,12 +185,11 @@ def main():
         print("Không tìm thấy file PDF nào.")
         sys.exit(1)
 
-    print(f"Khởi tạo EasyOCR reader (ngôn ngữ: {LANGUAGES})...")
-    reader = easyocr.Reader(LANGUAGES)
+    engine = get_ocr_engine()
 
     summary_rows = []
     for pdf_path in pdf_files:
-        process_pdf(pdf_path, reader, summary_rows)
+        process_pdf(pdf_path, engine, summary_rows)
 
     summary_path = os.path.join(OUTPUT_DIR, "summary.csv")
     fieldnames = ["file", "anchor_found", "offset_x", "offset_y"] + list(REF_REGIONS.keys())
