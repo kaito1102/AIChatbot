@@ -24,12 +24,18 @@ UPSCALE_FACTOR = 2              # phóng to ảnh bảng trước khi OCR để 
 MERGE_GAP_RATIO = 0.003          # gộp các bảng cách nhau trong khoảng này (tỉ lệ % chiều rộng trang)
                                  # -> ví dụ nhiều hàng title-block đứng sát nhau sẽ gộp thành 1 vùng crop
                                  # tăng giá trị này nếu vẫn còn bảng liền kề bị cắt riêng lẻ
-CROP_MODE = "auto"
+CROP_MODE = "fixed"
+
+# Sửa đổi phần CROP_REGIONS trong file gốc
 
 CROP_REGIONS = [
-    # ví dụ theo file QC1-6046-000D201001.pdf — CHỈNH LẠI theo khuôn mẫu của bạn:
+    # Các vùng bảng cố định (điều chỉnh theo layout của bạn)
     {"name": "spec_table", "x": 0.410, "y": 0.289, "w": 0.541, "h": 0.281},
-    {"name": "title_block", "x": 0.432, "y": 0.820, "w": 0.412, "h": 0.130},
+    {"name": "title_block", "x": 0.432, "y": 0.820, "w": 0.412, "h": 0.150},
+    
+    # THÊM BẢNG MTRL INDIC. - Vị trí cần điều chỉnh dựa trên ảnh thực tế
+    # Dựa vào kết quả OCR, bảng này nằm ở bên phải, gần giữa trang
+    {"name": "mtrl_indic", "x": 0.27490, "y": 0.7380, "w": 0.33530, "h": 0.0830},
 ]
 
 
